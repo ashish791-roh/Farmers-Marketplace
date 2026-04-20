@@ -4,14 +4,14 @@ import Navbar from "@/components/Navbar";
 import { useCart } from "@/context/CartContext";
 import { useAuth } from "@/context/AuthContext";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState, Suspense } from "react";
 import toast from "react-hot-toast";
 import { motion } from "framer-motion";
 
 import { collection, addDoc, serverTimestamp } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 
-export default function CheckoutPage() {
+function CheckoutPageContent() {
   const { cart, clearCart } = useCart();
   const { user } = useAuth();
   const router = useRouter();
@@ -26,6 +26,54 @@ export default function CheckoutPage() {
     state: "",
     address: "",
   });
+
+  // Handle Razorpay redirect on mobile
+  useEffect(() => {
+    // Check URL parameters for payment success
+    const urlParams = new URLSearchParams(window.location.search);
+    const paymentId = urlParams.get("razorpay_payment_id");
+    const orderId = urlParams.get("razorpay_order_id");
+
+    if (paymentId && orderId && user) {
+      // Payment was successful via redirect, retrieve stored data
+      const storedForm = localStorage.getItem("checkoutForm");
+      const storedCart = localStorage.getItem("checkoutCart");
+
+      if (storedForm && storedCart) {
+        const formData = JSON.parse(storedForm);
+        const cartData = JSON.parse(storedCart);
+
+        const saveOrder = async () => {
+          try {
+            setLoading(true);
+            await addDoc(collection(db, "orders"), {
+              userId: user.uid,
+              items: cartData,
+              total: cartData.reduce((sum: number, item: any) => sum + item.price * item.quantity, 0),
+              address: formData,
+              paymentId,
+              status: "paid",
+              createdAt: serverTimestamp(),
+            });
+
+            // Clear stored data
+            localStorage.removeItem("checkoutForm");
+            localStorage.removeItem("checkoutCart");
+
+            toast.success("Order placed successfully 🎉");
+            router.push("/orders");
+          } catch (error) {
+            console.error("Error saving order:", error);
+            toast.error("Payment successful but order saving failed. Contact support.");
+          } finally {
+            setLoading(false);
+          }
+        };
+
+        saveOrder();
+      }
+    }
+  }, [user, router]);
 
   const handleChange = (e: any) => {
     setForm({ ...form, [e.target.name]: e.target.value });
@@ -65,10 +113,26 @@ export default function CheckoutPage() {
 
       const res = await fetch("/api/payment/create-order", {
         method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
         body: JSON.stringify({ amount: total }),
       });
 
+      if (!res.ok) {
+        throw new Error("Failed to create payment order");
+      }
+
       const order = await res.json();
+
+      // Check if mobile device
+      const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+
+      // Store form data for mobile redirect
+      if (isMobile) {
+        localStorage.setItem("checkoutForm", JSON.stringify(form));
+        localStorage.setItem("checkoutCart", JSON.stringify(cart));
+      }
 
       const options = {
         key: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID,
@@ -79,21 +143,35 @@ export default function CheckoutPage() {
         order_id: order.id,
 
         handler: async function (response: any) {
-          await addDoc(collection(db, "orders"), {
-            userId: user.uid,
-            items: cart,
-            total,
-            address: form,
-            paymentId: response.razorpay_payment_id,
-            status: "paid",
-            createdAt: serverTimestamp(),
-          });
+          try {
+            await addDoc(collection(db, "orders"), {
+              userId: user.uid,
+              items: cart,
+              total,
+              address: form,
+              paymentId: response.razorpay_payment_id,
+              status: "paid",
+              createdAt: serverTimestamp(),
+            });
 
-          await clearCart();
+            await clearCart();
 
-          toast.success("Order placed successfully 🎉");
-          router.push("/orders");
+            toast.success("Order placed successfully 🎉");
+            router.push("/orders");
+          } catch (error) {
+            console.error("Error saving order:", error);
+            toast.error("Payment successful but order saving failed. Contact support.");
+          }
         },
+
+        modal: {
+          ondismiss: function() {
+            toast.error("Payment cancelled");
+            setLoading(false);
+          }
+        },
+
+        redirect: isMobile, // Use redirect for mobile devices
 
         prefill: {
           email: user.email,
@@ -108,8 +186,8 @@ export default function CheckoutPage() {
       const razorpay = new (window as any).Razorpay(options);
       razorpay.open();
     } catch (error) {
-      console.log(error);
-      toast.error("Payment failed");
+      console.error("Payment error:", error);
+      toast.error("Payment failed. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -238,5 +316,13 @@ export default function CheckoutPage() {
         </motion.div>
       </main>
     </>
+  );
+}
+
+export default function CheckoutPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center">Loading...</div>}>
+      <CheckoutPageContent />
+    </Suspense>
   );
 }
