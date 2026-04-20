@@ -14,6 +14,12 @@ import Link from "next/link";
 import Particles from "react-tsparticles";
 import { loadFull } from "tsparticles";
 
+const redirectByRole = (role: string | null) => {
+  if (role === "admin") return "/admin";
+  if (role === "farmer") return "/farmer/dashboard";
+  return "/";
+};
+
 export default function Login() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -25,10 +31,9 @@ export default function Login() {
       const result = await signInWithEmailAndPassword(auth, email, password);
       toast.success("Login successful 🚀");
 
-      // Check role and redirect to admin panel if admin, else home
       const snap = await getDoc(doc(db, "users", result.user.uid));
       const role = snap.exists() ? snap.data().role : null;
-      router.push(role === "admin" ? "/admin" : "/");
+      router.push(redirectByRole(role));
     } catch (err: any) {
       toast.error(err.message);
     }
@@ -39,10 +44,9 @@ export default function Login() {
       const result = await signInWithPopup(auth, googleProvider);
       toast.success("Google login successful 🚀");
 
-      // Check role and redirect to admin panel if admin, else home
       const snap = await getDoc(doc(db, "users", result.user.uid));
       const role = snap.exists() ? snap.data().role : null;
-      router.push(role === "admin" ? "/admin" : "/");
+      router.push(redirectByRole(role));
     } catch (err: any) {
       toast.error(err.message);
     }
@@ -68,7 +72,7 @@ export default function Login() {
       {/* AUTH CARD */}
       <div className="relative z-10 w-full max-w-md bg-white/80 backdrop-blur-lg p-8 rounded-2xl shadow-xl">
 
-        {/*  Logo */}
+        {/* Logo */}
         <h1 className="text-3xl font-bold text-center text-green-700">
           🌱 FarmX
         </h1>
@@ -92,7 +96,6 @@ export default function Login() {
             placeholder="Password"
             onChange={(e) => setPassword(e.target.value)}
           />
-
           <span
             onClick={() => setShowPass(!showPass)}
             className="absolute right-3 top-3 cursor-pointer text-gray-500"
