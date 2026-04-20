@@ -2,17 +2,37 @@
 
 import { useEffect, useState } from "react";
 import { db } from "@/lib/firebase";
-import { collection, onSnapshot, query, where, orderBy, limit } from "firebase/firestore";
+import { collection, onSnapshot, query, where } from "firebase/firestore";
 import { useAuth } from "@/context/AuthContext";
 import { motion } from "framer-motion";
-import { Package, ShoppingBag, CheckCircle, Clock, XCircle, TrendingUp } from "lucide-react";
+import { Package, CheckCircle, Clock, XCircle, TrendingUp } from "lucide-react";
+import Image from "next/image";
 import Link from "next/link";
+
+type ProductStatus = "approved" | "pending" | "rejected";
+
+type FarmerProduct = {
+  id: string;
+  status?: ProductStatus;
+  name?: string;
+  image?: string;
+  price?: number;
+  category?: string;
+  adminNote?: string;
+  createdAt?: { seconds?: number };
+};
+
+type DashboardStats = {
+  total: number;
+  approved: number;
+  pending: number;
+  rejected: number;
+};
 
 export default function FarmerDashboard() {
   const { user } = useAuth();
-  const [stats, setStats] = useState({ total: 0, approved: 0, pending: 0, rejected: 0 });
-  const [recentProducts, setRecentProducts] = useState<any[]>([]);
-  const [farmerName, setFarmerName] = useState("");
+  const [stats, setStats] = useState<DashboardStats>({ total: 0, approved: 0, pending: 0, rejected: 0 });
+  const [recentProducts, setRecentProducts] = useState<FarmerProduct[]>([]);
 
   useEffect(() => {
     if (!user) return;
@@ -24,7 +44,7 @@ export default function FarmerDashboard() {
     );
 
     const unsub = onSnapshot(q, (snap) => {
-      const products = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      const products = snap.docs.map((d) => ({ ...(d.data() as FarmerProduct), id: d.id }));
       setStats({
         total: products.length,
         approved: products.filter((p) => p.status === "approved").length,
@@ -43,6 +63,14 @@ export default function FarmerDashboard() {
     return () => unsub();
   }, [user]);
 
+  if (!user) {
+    return (
+      <div className="min-h-[360px] flex items-center justify-center text-gray-400">
+        Loading your dashboard...
+      </div>
+    );
+  }
+
   const statCards = [
     { title: "Total Submitted", value: stats.total, icon: <Package size={22} />, color: "from-blue-500 to-blue-700" },
     { title: "Approved", value: stats.approved, icon: <CheckCircle size={22} />, color: "from-green-500 to-green-700" },
@@ -50,13 +78,13 @@ export default function FarmerDashboard() {
     { title: "Rejected", value: stats.rejected, icon: <XCircle size={22} />, color: "from-red-500 to-red-700" },
   ];
 
-  const getStatusBadge = (status: string) => {
+  const getStatusBadge = (status?: ProductStatus) => {
     if (status === "approved") return "bg-green-500/20 text-green-400 border border-green-500/30";
     if (status === "rejected") return "bg-red-500/20 text-red-400 border border-red-500/30";
     return "bg-yellow-500/20 text-yellow-400 border border-yellow-500/30";
   };
 
-  const getStatusLabel = (status: string) => {
+  const getStatusLabel = (status?: ProductStatus) => {
     if (status === "approved") return "✅ Approved";
     if (status === "rejected") return "❌ Rejected";
     return "⏳ Pending";
@@ -123,15 +151,19 @@ export default function FarmerDashboard() {
                 key={product.id}
                 className="flex items-center gap-4 p-4 bg-white/5 rounded-xl border border-white/10 hover:border-white/20 transition"
               >
-                <img
-                  src={product.image || "https://via.placeholder.com/60x60?text=🌾"}
-                  alt={product.name}
-                  className="w-12 h-12 rounded-lg object-cover flex-shrink-0"
-                  onError={(e) => { e.currentTarget.src = "https://via.placeholder.com/60x60?text=🌾"; }}
+                <Image
+                  src={product.image || "/product-placeholder.svg"}
+                  alt={product.name || "Product image"}
+                  width={48}
+                  height={48}
+                  className="rounded-lg object-cover flex-shrink-0"
+                  unoptimized
                 />
                 <div className="flex-1 min-w-0">
-                  <p className="font-medium text-white truncate">{product.name}</p>
-                  <p className="text-sm text-gray-400">₹{product.price} · {product.category || "Uncategorized"}</p>
+                  <p className="font-medium text-white truncate">{product.name ?? "Unnamed product"}</p>
+                  <p className="text-sm text-gray-400">
+                    {product.price !== undefined ? `₹${product.price}` : "Price unavailable"} · {product.category || "Uncategorized"}
+                  </p>
                   {product.adminNote && (
                     <p className="text-xs text-yellow-400 mt-1">💬 Admin: {product.adminNote}</p>
                   )}
