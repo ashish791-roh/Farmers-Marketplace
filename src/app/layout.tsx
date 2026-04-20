@@ -1,6 +1,7 @@
 import "./globals.css";
 import { AuthProvider } from "@/context/AuthContext";
 import { CartProvider } from "@/context/CartContext";
+import { WishlistProvider } from "@/context/WishlistContext";
 import { Toaster } from "react-hot-toast";
 import Script from "next/script";
 
@@ -36,28 +37,32 @@ export default function RootLayout({
           {/* CART GLOBAL STATE */}
           <CartProvider>
 
-            {/*  APP CONTENT */}
-            {children}
+            {/* WISHLIST GLOBAL STATE */}
+            <WishlistProvider>
 
-            {/*  TOAST SYSTEM (GLOBAL) */}
-            <Toaster
-              position="top-right"
-              toastOptions={{
-                success: {
-                  style: {
-                    background: "#16a34a",
-                    color: "white",
-                  },
-                },
-                error: {
-                  style: {
-                    background: "#dc2626",
-                    color: "white",
-                  },
-                },
-              }}
-            />
+              {/*  APP CONTENT */}
+              {children}
 
+              {/*  TOAST SYSTEM (GLOBAL) */}
+              <Toaster
+                position="top-right"
+                toastOptions={{
+                  success: {
+                    style: {
+                      background: "#16a34a",
+                      color: "white",
+                    },
+                  },
+                  error: {
+                    style: {
+                      background: "#dc2626",
+                      color: "white",
+                    },
+                  },
+                }}
+              />
+
+            </WishlistProvider>
           </CartProvider>
         </AuthProvider>
 

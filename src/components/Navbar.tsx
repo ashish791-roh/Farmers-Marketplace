@@ -7,19 +7,26 @@ import { signOut } from "firebase/auth";
 import { auth } from "@/lib/firebase";
 import { useAuth } from "@/context/AuthContext";
 import { useRole } from "@/hooks/useRole";
+import { useCart } from "@/context/CartContext";
+import { useWishlist } from "@/context/WishlistContext";
 import { motion } from "framer-motion";
 import { onAddToCart } from "@/lib/cartEvent";
+import { Heart, User } from "lucide-react";
 
 export default function Navbar() {
   const router = useRouter();
   const pathname = usePathname();
   const { user, loading } = useAuth();
   const { role } = useRole();
+  const { cart } = useCart();
+  const { wishlist } = useWishlist();
 
   const [menuOpen, setMenuOpen] = useState(false);
   const [cartBounce, setCartBounce] = useState(false);
 
   const cartRef = useRef<HTMLDivElement | null>(null);
+
+  const cartCount = cart?.reduce((sum, item) => sum + item.quantity, 0) || 0;
 
   const handleLogout = async () => {
     try {
@@ -71,11 +78,27 @@ export default function Navbar() {
             ref={cartRef}
             animate={cartBounce ? { scale: [1, 1.3, 1] } : {}}
             transition={{ duration: 0.4 }}
+            className="relative"
           >
-            <Link href="/cart" className="hover:text-green-600">
+            <Link href="/cart" className="hover:text-green-600 flex items-center gap-1">
               🛒 Cart
+              {cartCount > 0 && (
+                <span className="absolute -top-2 -right-3 bg-green-600 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center font-bold">
+                  {cartCount > 9 ? "9+" : cartCount}
+                </span>
+              )}
             </Link>
           </motion.div>
+
+          {/* WISHLIST */}
+          <Link href="/wishlist" className="relative hover:text-red-500 transition flex items-center gap-1">
+            <Heart size={18} className={wishlist.length > 0 ? "fill-red-500 text-red-500" : ""} />
+            {wishlist.length > 0 && (
+              <span className="absolute -top-2 -right-3 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center font-bold">
+                {wishlist.length > 9 ? "9+" : wishlist.length}
+              </span>
+            )}
+          </Link>
 
           <Link href="/orders" className="hover:text-green-600 transition">
             Orders
@@ -88,9 +111,11 @@ export default function Navbar() {
             <span className="text-sm text-gray-500">Loading...</span>
           ) : user ? (
             <>
-              <span className="text-sm text-gray-700 hidden lg:block">
-                {user.email}
-              </span>
+              {/* Profile */}
+              <Link href="/profile" className="flex items-center gap-1.5 text-sm text-gray-700 hover:text-green-700 transition px-3 py-2 rounded-xl hover:bg-gray-50">
+                <User size={16} />
+                <span className="hidden lg:block truncate max-w-[120px]">{user.email}</span>
+              </Link>
 
               {/* Admin Panel button — only visible to admins */}
               {role === "admin" && (
@@ -150,13 +175,23 @@ export default function Navbar() {
             Products
           </Link>
 
-          <Link href="/cart" className="block text-gray-700">
-            Cart
+          <Link href="/cart" className="block text-gray-700 flex items-center gap-2">
+            Cart {cartCount > 0 && <span className="bg-green-600 text-white text-xs rounded-full px-2 py-0.5">{cartCount}</span>}
+          </Link>
+
+          <Link href="/wishlist" className="block text-gray-700 flex items-center gap-2">
+            Wishlist {wishlist.length > 0 && <span className="bg-red-500 text-white text-xs rounded-full px-2 py-0.5">{wishlist.length}</span>}
           </Link>
 
           <Link href="/orders" className="block text-gray-700">
             Orders
           </Link>
+
+          {user && (
+            <Link href="/profile" className="block text-gray-700">
+              My Profile
+            </Link>
+          )}
 
           {/* AUTH SECTION */}
           <div className="border-t pt-4 space-y-3">

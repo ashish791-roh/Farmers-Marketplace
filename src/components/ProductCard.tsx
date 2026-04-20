@@ -2,9 +2,11 @@
 
 import Link from "next/link";
 import { useCart } from "@/context/CartContext";
+import { useWishlist } from "@/context/WishlistContext";
 import { motion } from "framer-motion";
 import toast from "react-hot-toast";
 import { emitAddToCart } from "@/lib/cartEvent";
+import { Heart } from "lucide-react";
 
 type Props = {
   id: string;
@@ -15,6 +17,18 @@ type Props = {
 
 const ProductCard = ({ id, name, price, image }: Props) => {
   const { addToCart } = useCart();
+  const { addToWishlist, removeFromWishlist, isWishlisted } = useWishlist();
+  const wishlisted = isWishlisted(id);
+
+  const handleWishlist = () => {
+    if (wishlisted) {
+      removeFromWishlist(id);
+      toast.success("Removed from wishlist");
+    } else {
+      addToWishlist({ id, name, price, image });
+      toast.success("Added to wishlist ❤️");
+    }
+  };
 
   return (
     <motion.div
@@ -25,17 +39,27 @@ const ProductCard = ({ id, name, price, image }: Props) => {
       className="bg-white rounded-2xl shadow-sm hover:shadow-xl overflow-hidden"
     >
       {/* IMAGE */}
-      <Link href={`/product/${id}`}>
-        <div className="overflow-hidden">
+      <div className="relative overflow-hidden">
+        <Link href={`/product/${id}`}>
           <motion.img
             src={image}
             alt={name}
             className="h-44 w-full object-cover"
             whileHover={{ scale: 1.1 }}
             transition={{ duration: 0.3 }}
+            onError={(e) => { e.currentTarget.src = "https://via.placeholder.com/300x200?text=Product"; }}
           />
-        </div>
-      </Link>
+        </Link>
+        {/* WISHLIST HEART */}
+        <button
+          onClick={handleWishlist}
+          className={`absolute top-2 right-2 p-2 rounded-full shadow transition ${
+            wishlisted ? "bg-red-500 text-white" : "bg-white/90 text-gray-400 hover:text-red-500"
+          }`}
+        >
+          <Heart size={16} fill={wishlisted ? "currentColor" : "none"} />
+        </button>
+      </div>
 
       {/* CONTENT */}
       <div className="p-4">
@@ -56,7 +80,6 @@ const ProductCard = ({ id, name, price, image }: Props) => {
               image,
               quantity: 1,
             });
-
 
             //  animation trigger 
             const img = (e.currentTarget
