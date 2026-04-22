@@ -1,70 +1,69 @@
 import Razorpay from "razorpay";
 import { NextResponse } from "next/server";
-import crypto from "crypto";
 
 export async function POST(req: Request) {
   try {
-    const { razorpay_payment_id, razorpay_order_id, razorpay_signature } =
-      await req.json();
+    const { amount } = await req.json();
 
-    if (!razorpay_payment_id || !razorpay_order_id || !razorpay_signature) {
+    if (!amount || amount <= 0) {
       return NextResponse.json(
-        { error: "Missing payment verification details" },
-        { status: 400 }
-      );
-    }
-
-    if (!process.env.RAZORPAY_KEY_SECRET) {
-      return NextResponse.json(
-        { error: "Razorpay secret key not configured" },
-        { status: 500 }
-      );
-    }
-
-    // Verify HMAC signature — this is the authoritative check.
-    // If the signature matches, the payment is genuine.
-    const generated_signature = crypto
-      .createHmac("sha256", process.env.RAZORPAY_KEY_SECRET)
-      .update(razorpay_order_id + "|" + razorpay_payment_id)
-      .digest("hex");
-
-    if (generated_signature !== razorpay_signature) {
-      return NextResponse.json(
-        { error: "Payment verification failed - Invalid signature" },
+        { error: "Valid amount is required" },
         { status: 400 }
       );
     }
 
     /*
-      FIX: Removed the payment.status === "captured" check.
+      FIX: In Next.js API routes (server-side), NEXT_PUBLIC_ variables are
+      NOT available via process.env — they are only inlined into client
+      bundles at build time. Using NEXT_PUBLIC_RAZORPAY_KEY_ID here always
+      evaluates to undefined at runtime, triggering "Razorpay configuration
+      missing" on every request (especially noticeable on mobile).
 
-      In test mode Razorpay payments land in "authorized" state, not
-      "captured" — so the old check rejected every single test payment
-      with "Payment not captured", which was the root cause of the
-      "payment failed, please try again later" error shown to users.
+      Use RAZORPAY_KEY_ID (no NEXT_PUBLIC_ prefix) as a plain server-side
+      env var in API routes. Keep NEXT_PUBLIC_RAZORPAY_KEY_ID only in the
+      client-side checkout page where it is needed.
 
-      In live mode with auto-capture disabled, payments are also
-      "authorized" first, so the check would break live payments too.
-
-      The HMAC signature verification above is the correct and sufficient
-      authenticity check per Razorpay's own documentation. The handler
-      callback on the client only fires after a successful payment, and
-      the signature can only be produced by Razorpay using your secret
-      key — so a valid signature means the payment is genuine.
-
-      If you need to confirm capture status (e.g., for manual capture
-      workflows), do it asynchronously via Razorpay webhooks instead.
+      In your .env.local you need both:
+        RAZORPAY_KEY_ID=rzp_test_xxxxxxxxxx        ← for API routes
+        RAZORPAY_KEY_SECRET=xxxxxxxxxx             ← for API routes
+        NEXT_PUBLIC_RAZORPAY_KEY_ID=rzp_test_xxxx  ← for checkout page (client)
     */
+    const keyId = process.env.RAZORPAY_KEY_ID;
+    const keySecret = process.env.RAZORPAY_KEY_SECRET;
+
+    if (!keyId || !keySecret) {
+      console.error(
+        "Missing env vars — set RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET in .env.local"
+      );
+      return NextResponse.json(
+        { error: "Razorpay configuration missing" },
+        { status: 500 }
+      );
+    }
+
+    const razorpay = new Razorpay({
+      key_id: keyId,
+      key_secret: keySecret,
+    });
+
+    const order = await razorpay.orders.create({
+      amount: Math.round(amount * 100), // ₹ → paise
+      currency: "INR",
+      receipt: `receipt_${Date.now()}`,
+    });
 
     return NextResponse.json({
-      verified: true,
-      payment_id: razorpay_payment_id,
-      order_id: razorpay_order_id,
+      id: order.id,
+      amount: order.amount,
+      currency: order.currency,
     });
   } catch (error) {
-    console.error("Payment verification error:", error);
+    console.error("Order creation error:", error);
     return NextResponse.json(
-      { error: "Failed to verify payment" },
+      {
+        error: "Failed to create payment order",
+        details: error instanceof Error ? error.message : "Unknown error",
+      },
       { status: 500 }
     );
   }
