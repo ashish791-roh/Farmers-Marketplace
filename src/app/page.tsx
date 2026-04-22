@@ -131,6 +131,8 @@ export default function Home() {
                   name={p.name}
                   price={p.price}
                   image={p.image}
+                  unit={p.unit}
+                  category={p.category}
                 />
               ))}
             </motion.div>
