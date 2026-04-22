@@ -20,30 +20,25 @@ export default function RootLayout({
       <body className="bg-white text-gray-900">
 
         {/*
-          FIX: Use Next.js <Script> with strategy="beforeInteractive" so the
-          Razorpay SDK is guaranteed to load before any page JS runs.
-          A plain <script> tag inside <body> in a Next.js Server Component
-          is NOT executed reliably — window.Razorpay ends up undefined,
-          which causes the "Payment failed" error on every click.
+          FIX: Use strategy="lazyOnload" for external CDN scripts in
+          Next.js App Router. "beforeInteractive" is only supported for
+          self-hosted scripts; using it for an external URL causes the
+          script to be silently skipped → window.Razorpay stays undefined
+          → every "Pay Now" click shows "Payment failed".
+
+          "lazyOnload" correctly injects the <script> tag and loads
+          Razorpay after the page becomes interactive, so window.Razorpay
+          is available when the user clicks Pay Now.
         */}
         <Script
           src="https://checkout.razorpay.com/v1/checkout.js"
-          strategy="beforeInteractive"
+          strategy="lazyOnload"
         />
 
-        {/* AUTH GLOBAL STATE */}
         <AuthProvider>
-
-          {/* CART GLOBAL STATE */}
           <CartProvider>
-
-            {/* WISHLIST GLOBAL STATE */}
             <WishlistProvider>
-
-              {/*  APP CONTENT */}
               {children}
-
-              {/*  TOAST SYSTEM (GLOBAL) */}
               <Toaster
                 position="top-right"
                 toastOptions={{
@@ -61,7 +56,6 @@ export default function RootLayout({
                   },
                 }}
               />
-
             </WishlistProvider>
           </CartProvider>
         </AuthProvider>

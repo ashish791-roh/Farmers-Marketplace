@@ -4,7 +4,7 @@ import Navbar from "@/components/Navbar";
 import { useCart } from "@/context/CartContext";
 import { useAuth } from "@/context/AuthContext";
 import { useRouter } from "next/navigation";
-import { useEffect, useState, Suspense } from "react";
+import { useState, Suspense, useEffect } from "react";
 import toast from "react-hot-toast";
 import { motion } from "framer-motion";
 
@@ -17,6 +17,7 @@ function CheckoutPageContent() {
   const router = useRouter();
 
   const [loading, setLoading] = useState(false);
+  const [razorpayReady, setRazorpayReady] = useState(false);
 
   const [form, setForm] = useState({
     name: "",
@@ -27,17 +28,33 @@ function CheckoutPageContent() {
     address: "",
   });
 
-
+  /*
+    FIX: Poll until window.Razorpay is available.
+    Because we use strategy="lazyOnload", the SDK loads asynchronously.
+    We wait for it to be ready before enabling the Pay Now button,
+    so the user can never click it while window.Razorpay is still undefined.
+  */
+  useEffect(() => {
+    if ((window as any).Razorpay) {
+      setRazorpayReady(true);
+      return;
+    }
+    const interval = setInterval(() => {
+      if ((window as any).Razorpay) {
+        setRazorpayReady(true);
+        clearInterval(interval);
+      }
+    }, 100);
+    return () => clearInterval(interval);
+  }, []);
 
   const handleChange = (e: any) => {
     setForm({ ...form, [e.target.name]: e.target.value });
   };
 
-  // TOTAL
   const total =
     cart?.reduce((sum, item) => sum + item.price * item.quantity, 0) || 0;
 
-  // PAYMENT HANDLER
   const handlePayment = async () => {
     if (!user) {
       toast.error("Login required");
@@ -62,20 +79,30 @@ function CheckoutPageContent() {
       return;
     }
 
+    /*
+      FIX: Guard against window.Razorpay being undefined.
+      If the SDK hasn't loaded yet (slow network), show a clear message
+      instead of crashing silently with "Payment failed".
+    */
+    if (!(window as any).Razorpay) {
+      toast.error("Payment system is loading. Please try again in a moment.");
+      return;
+    }
+
     try {
       setLoading(true);
 
       const res = await fetch("/api/payment/create-order", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ amount: total }),
       });
 
       if (!res.ok) {
         const errorData = await res.json();
-        throw new Error(errorData.details || errorData.error || "Failed to create payment order");
+        throw new Error(
+          errorData.details || errorData.error || "Failed to create payment order"
+        );
       }
 
       const order = await res.json();
@@ -83,8 +110,6 @@ function CheckoutPageContent() {
       if (!order.id) {
         throw new Error("Order creation failed - no order ID received");
       }
-
-      // Store form data for localStorage validation (optional)
 
       const options = {
         key: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID,
@@ -96,12 +121,9 @@ function CheckoutPageContent() {
 
         handler: async function (response: any) {
           try {
-            // Verify payment on backend (optional but recommended)
             const verifyRes = await fetch("/api/payment/verify-payment", {
               method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-              },
+              headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
                 razorpay_payment_id: response.razorpay_payment_id,
                 razorpay_order_id: response.razorpay_order_id,
@@ -110,7 +132,8 @@ function CheckoutPageContent() {
             });
 
             if (!verifyRes.ok) {
-              throw new Error("Payment verification failed");
+              const errData = await verifyRes.json();
+              throw new Error(errData.error || "Payment verification failed");
             }
 
             await addDoc(collection(db, "orders"), {
@@ -126,25 +149,30 @@ function CheckoutPageContent() {
 
             await clearCart();
 
-            // Clear localStorage if it was set
-            localStorage.removeItem("checkoutForm");
-            localStorage.removeItem("checkoutCart");
-
             toast.success("Order placed successfully 🎉");
             router.push("/orders");
           } catch (error) {
             console.error("Error saving order:", error);
-            toast.error("Payment successful but order saving failed. Contact support.");
+            toast.error(
+              "Payment successful but order saving failed. Contact support."
+            );
           } finally {
+            /*
+              FIX: setLoading(false) belongs in the handler's finally block,
+              NOT in the outer try/finally. The outer finally fires right
+              after razorpay.open() returns (before the user even pays),
+              which would prematurely re-enable the button.
+            */
             setLoading(false);
           }
         },
 
         modal: {
-          ondismiss: function() {
-            toast.error("Payment cancelled");
+          ondismiss: function () {
+            toast("Payment cancelled", { icon: "ℹ️" });
+            // FIX: Reset loading when user closes the Razorpay modal
             setLoading(false);
-          }
+          },
         },
 
         prefill: {
@@ -159,11 +187,32 @@ function CheckoutPageContent() {
       };
 
       const razorpay = new (window as any).Razorpay(options);
+
+      /*
+        FIX: Listen for the payment.failed event to reset loading state
+        and show a proper error message instead of leaving the button
+        stuck in "Processing..." state.
+      */
+      razorpay.on("payment.failed", function (response: any) {
+        console.error("Payment failed:", response.error);
+        toast.error(
+          response.error?.description || "Payment failed. Please try again."
+        );
+        setLoading(false);
+      });
+
       razorpay.open();
+
+      /*
+        FIX: Do NOT call setLoading(false) here in the outer finally.
+        Loading is now reset inside the handler, ondismiss, and
+        payment.failed callbacks — after the user actually finishes.
+      */
     } catch (error) {
       console.error("Payment error:", error);
-      toast.error("Payment failed. Please try again.");
-    } finally {
+      toast.error(
+        error instanceof Error ? error.message : "Payment failed. Please try again."
+      );
       setLoading(false);
     }
   };
@@ -235,9 +284,7 @@ function CheckoutPageContent() {
           animate={{ opacity: 1, x: 0 }}
           className="bg-white p-6 rounded-2xl shadow h-fit"
         >
-          <h2 className="text-xl font-semibold mb-4">
-            Order Summary
-          </h2>
+          <h2 className="text-xl font-semibold mb-4">Order Summary</h2>
 
           <div className="space-y-3 max-h-64 overflow-y-auto">
             {cart.map((item) => (
@@ -245,24 +292,15 @@ function CheckoutPageContent() {
                 key={item.id}
                 className="flex items-center gap-4 py-3 border-b last:border-none"
               >
-                {/* SMALL THUMBNAIL (FIXED) */}
                 <img
                   src={item.image}
                   alt={item.name}
                   className="w-12 h-12 min-w-[48px] rounded-lg object-cover border border-gray-200"
                 />
-
-                {/* TEXT */}
                 <div className="flex-1">
-                  <p className="text-sm font-medium text-gray-800">
-                    {item.name}
-                  </p>
-                  <p className="text-xs text-gray-500">
-                    Qty: {item.quantity}
-                  </p>
+                  <p className="text-sm font-medium text-gray-800">{item.name}</p>
+                  <p className="text-xs text-gray-500">Qty: {item.quantity}</p>
                 </div>
-
-                {/* PRICE */}
                 <div className="text-sm font-semibold text-gray-800">
                   ₹{item.price * item.quantity}
                 </div>
@@ -270,19 +308,21 @@ function CheckoutPageContent() {
             ))}
           </div>
 
-          {/* TOTAL */}
           <div className="border-t mt-4 pt-4 flex justify-between font-bold text-lg">
             <span>Total</span>
             <span className="text-green-600">₹{total}</span>
           </div>
 
-          {/* BUTTON */}
           <button
             onClick={handlePayment}
-            disabled={loading}
-            className="w-full mt-6 bg-green-600 hover:bg-green-700 text-white py-3 rounded-xl transition"
+            disabled={loading || !razorpayReady}
+            className="w-full mt-6 bg-green-600 hover:bg-green-700 disabled:opacity-60 disabled:cursor-not-allowed text-white py-3 rounded-xl transition"
           >
-            {loading ? "Processing..." : "Pay Now 💳"}
+            {loading
+              ? "Processing..."
+              : !razorpayReady
+              ? "Loading payment..."
+              : "Pay Now 💳"}
           </button>
 
           <p className="text-xs text-gray-400 mt-3 text-center">
@@ -296,7 +336,13 @@ function CheckoutPageContent() {
 
 export default function CheckoutPage() {
   return (
-    <Suspense fallback={<div className="min-h-screen flex items-center justify-center">Loading...</div>}>
+    <Suspense
+      fallback={
+        <div className="min-h-screen flex items-center justify-center">
+          Loading...
+        </div>
+      }
+    >
       <CheckoutPageContent />
     </Suspense>
   );
