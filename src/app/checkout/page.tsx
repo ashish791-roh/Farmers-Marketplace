@@ -27,53 +27,7 @@ function CheckoutPageContent() {
     address: "",
   });
 
-  // Handle Razorpay redirect on mobile
-  useEffect(() => {
-    // Check URL parameters for payment success
-    const urlParams = new URLSearchParams(window.location.search);
-    const paymentId = urlParams.get("razorpay_payment_id");
-    const orderId = urlParams.get("razorpay_order_id");
 
-    if (paymentId && orderId && user) {
-      // Payment was successful via redirect, retrieve stored data
-      const storedForm = localStorage.getItem("checkoutForm");
-      const storedCart = localStorage.getItem("checkoutCart");
-
-      if (storedForm && storedCart) {
-        const formData = JSON.parse(storedForm);
-        const cartData = JSON.parse(storedCart);
-
-        const saveOrder = async () => {
-          try {
-            setLoading(true);
-            await addDoc(collection(db, "orders"), {
-              userId: user.uid,
-              items: cartData,
-              total: cartData.reduce((sum: number, item: any) => sum + item.price * item.quantity, 0),
-              address: formData,
-              paymentId,
-              status: "paid",
-              createdAt: serverTimestamp(),
-            });
-
-            // Clear stored data
-            localStorage.removeItem("checkoutForm");
-            localStorage.removeItem("checkoutCart");
-
-            toast.success("Order placed successfully 🎉");
-            router.push("/orders");
-          } catch (error) {
-            console.error("Error saving order:", error);
-            toast.error("Payment successful but order saving failed. Contact support.");
-          } finally {
-            setLoading(false);
-          }
-        };
-
-        saveOrder();
-      }
-    }
-  }, [user, router]);
 
   const handleChange = (e: any) => {
     setForm({ ...form, [e.target.name]: e.target.value });
@@ -120,19 +74,17 @@ function CheckoutPageContent() {
       });
 
       if (!res.ok) {
-        throw new Error("Failed to create payment order");
+        const errorData = await res.json();
+        throw new Error(errorData.details || errorData.error || "Failed to create payment order");
       }
 
       const order = await res.json();
 
-      // Check if mobile device
-      const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-
-      // Store form data for mobile redirect
-      if (isMobile) {
-        localStorage.setItem("checkoutForm", JSON.stringify(form));
-        localStorage.setItem("checkoutCart", JSON.stringify(cart));
+      if (!order.id) {
+        throw new Error("Order creation failed - no order ID received");
       }
+
+      // Store form data for localStorage validation (optional)
 
       const options = {
         key: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID,
@@ -144,23 +96,47 @@ function CheckoutPageContent() {
 
         handler: async function (response: any) {
           try {
+            // Verify payment on backend (optional but recommended)
+            const verifyRes = await fetch("/api/payment/verify-payment", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({
+                razorpay_payment_id: response.razorpay_payment_id,
+                razorpay_order_id: response.razorpay_order_id,
+                razorpay_signature: response.razorpay_signature,
+              }),
+            });
+
+            if (!verifyRes.ok) {
+              throw new Error("Payment verification failed");
+            }
+
             await addDoc(collection(db, "orders"), {
               userId: user.uid,
               items: cart,
               total,
               address: form,
               paymentId: response.razorpay_payment_id,
+              orderId: response.razorpay_order_id,
               status: "paid",
               createdAt: serverTimestamp(),
             });
 
             await clearCart();
 
+            // Clear localStorage if it was set
+            localStorage.removeItem("checkoutForm");
+            localStorage.removeItem("checkoutCart");
+
             toast.success("Order placed successfully 🎉");
             router.push("/orders");
           } catch (error) {
             console.error("Error saving order:", error);
             toast.error("Payment successful but order saving failed. Contact support.");
+          } finally {
+            setLoading(false);
           }
         },
 
@@ -171,11 +147,10 @@ function CheckoutPageContent() {
           }
         },
 
-        redirect: isMobile, // Use redirect for mobile devices
-
         prefill: {
-          email: user.email,
-          contact: form.phone,
+          name: form.name || "",
+          email: user.email || "",
+          contact: form.phone || "",
         },
 
         theme: {
