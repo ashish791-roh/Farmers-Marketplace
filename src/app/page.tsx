@@ -4,6 +4,7 @@ import Navbar from "@/components/Navbar";
 import BannerCarousel from "@/components/BannerCarousel";
 import CategoryGrid from "@/components/CategoryGrid";
 import ProductCard, { ProductCardSkeleton } from "@/components/ProductCard";
+import SmartRecommendations from "@/components/SmartRecommendations";
 import { motion } from "framer-motion";
 import { useEffect, useState, useRef } from "react";
 import { db } from "@/lib/firebase";
@@ -216,6 +217,15 @@ export default function Home() {
           transition={{ delay: 0.1, duration: 0.4 }}
         >
           <TrustBadges />
+        </motion.section>
+
+        {/* ── SMART RECOMMENDATIONS ────────────────────────────────────── */}
+        <motion.section
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.12, duration: 0.4 }}
+        >
+          <SmartRecommendations allProducts={products} loading={loading} />
         </motion.section>
 
         {/* ── SHOP BY CATEGORY ─────────────────────────────────────────── */}
