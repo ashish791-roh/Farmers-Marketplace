@@ -417,7 +417,7 @@ export default function CartPage() {
     <>
       <Navbar />
 
-      <div className="min-h-screen bg-gray-50 pb-32 md:pb-10">
+      <div className="min-h-screen bg-gray-50 pb-56 md:pb-10">
         {/* ── Mobile top bar ── */}
         <div className="md:hidden flex items-center gap-3 px-4 py-3 bg-white border-b border-gray-100 sticky top-14 z-20">
           <button onClick={() => router.back()} className="text-gray-600">
@@ -517,7 +517,7 @@ export default function CartPage() {
 
       {/* ── Mobile Sticky Bottom Bar ── */}
       {cart && cart.length > 0 && (
-        <div className="md:hidden fixed bottom-0 left-0 right-0 z-30 bg-white border-t border-gray-100 shadow-2xl">
+        <div className="md:hidden fixed bottom-16 left-0 right-0 z-30 bg-white border-t border-gray-100 shadow-2xl">
           {/* Mini price breakdown */}
           <div className="px-4 pt-3 pb-1 flex items-center justify-between">
             <div>

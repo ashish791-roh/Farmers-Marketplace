@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { db } from "@/lib/firebase";
-import { doc, getDoc, updateDoc, collection, query, where, getDocs } from "firebase/firestore";
+import { doc, getDoc, setDoc, updateDoc, collection, query, where, getDocs } from "firebase/firestore";
 import Navbar from "@/components/Navbar";
 import Link from "next/link";
 import { motion } from "framer-motion";
@@ -43,7 +43,7 @@ export default function ProfilePage() {
     if (!user || !newName.trim()) return;
     setSaving(true);
     try {
-      await updateDoc(doc(db, "users", user.uid), { name: newName.trim() });
+      await setDoc(doc(db, "users", user.uid), { name: newName.trim() }, { merge: true });
       setProfile((prev: any) => ({ ...prev, name: newName.trim() }));
       setEditingName(false);
       toast.success("Name updated!");
