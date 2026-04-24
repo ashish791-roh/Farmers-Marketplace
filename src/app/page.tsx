@@ -276,6 +276,8 @@ export default function Home() {
                     image={p.image}
                     unit={p.unit}
                     category={p.category}
+                    farmerVerified={p.farmerVerified}
+                    farmerName={p.farmerName}
                     originalPrice={
                       // Simulate a discount for visual richness — every other product gets one
                       i % 2 === 0 && p.price > 30
@@ -381,6 +383,8 @@ export default function Home() {
                   image={p.image}
                   unit={p.unit}
                   category={p.category}
+                  farmerVerified={p.farmerVerified}
+                  farmerName={p.farmerName}
                   isFeatured
                 />
               ))}
@@ -417,6 +421,8 @@ export default function Home() {
                       image={p.image}
                       unit={p.unit}
                       category={p.category}
+                      farmerVerified={p.farmerVerified}
+                      farmerName={p.farmerName}
                     />
                   </div>
                 ))}
@@ -504,6 +510,8 @@ export default function Home() {
                     image={p.image}
                     unit={p.unit}
                     category={p.category}
+                    farmerVerified={p.farmerVerified}
+                    farmerName={p.farmerName}
                     originalPrice={
                       i % 3 === 0 && p.price > 30
                         ? Math.round(p.price * 1.2)

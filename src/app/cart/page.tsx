@@ -1,5 +1,7 @@
 "use client";
 
+import Image from "next/image";
+
 import { useCart } from "@/context/CartContext";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -192,13 +194,15 @@ function CartItem({
       <div className="flex gap-3 py-4">
         {/* Image */}
         <Link href={`/product/${item.id}`} className="shrink-0">
-          <div className="w-20 h-20 md:w-24 md:h-24 rounded-xl overflow-hidden bg-gradient-to-br from-green-50 to-gray-100 border border-gray-100">
-            <img
+          <div className="w-20 h-20 md:w-24 md:h-24 rounded-xl overflow-hidden bg-gradient-to-br from-green-50 to-gray-100 border border-gray-100 relative">
+            <Image
               src={item.image || "https://placehold.co/96x96/e8f5e9/2e7d32?text=🌱"}
               alt={item.name}
-              className="w-full h-full object-cover"
+              fill
+              sizes="96px"
+              className="object-cover"
               onError={(e) => {
-                e.currentTarget.src =
+                (e.target as HTMLImageElement).src =
                   "https://placehold.co/96x96/e8f5e9/2e7d32?text=🌱";
               }}
             />

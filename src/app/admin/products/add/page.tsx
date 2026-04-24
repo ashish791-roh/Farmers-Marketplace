@@ -1,5 +1,7 @@
 "use client";
 
+import Image from "next/image";
+
 import { useState } from "react";
 import { db } from "@/lib/firebase";
 import { collection, addDoc, serverTimestamp } from "firebase/firestore";
@@ -119,12 +121,16 @@ export default function AddProduct() {
             className="w-full p-3 rounded-xl bg-white/10 border border-white/20 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-green-500"
           />
           {form.image && (
-            <img
-              src={form.image}
-              alt="Preview"
-              className="mt-3 h-36 w-full object-cover rounded-xl border border-white/10"
-              onError={(e) => (e.currentTarget.style.display = "none")}
-            />
+            <div className="relative mt-3 h-36 w-full rounded-xl overflow-hidden border border-white/10">
+              <Image
+                src={form.image}
+                alt="Preview"
+                fill
+                sizes="100vw"
+                className="object-cover"
+                onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+              />
+            </div>
           )}
         </div>
 

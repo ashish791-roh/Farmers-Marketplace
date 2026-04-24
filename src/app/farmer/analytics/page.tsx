@@ -1,5 +1,7 @@
 "use client";
 
+import Image from "next/image";
+
 import { useEffect, useState } from "react";
 import { db } from "@/lib/firebase";
 import { collection, onSnapshot, query, where } from "firebase/firestore";
@@ -131,12 +133,16 @@ export default function FarmerAnalytics() {
             <div className="space-y-3">
               {products.map((p) => (
                 <div key={p.id} className="flex items-center gap-3 p-3 bg-white/5 rounded-xl">
-                  <img
-                    src={p.image || "https://via.placeholder.com/40x40?text=🌾"}
-                    alt={p.name}
-                    className="w-10 h-10 rounded-lg object-cover"
-                    onError={(e) => { e.currentTarget.src = "https://via.placeholder.com/40x40?text=🌾"; }}
-                  />
+                  <div className="relative w-10 h-10 rounded-lg overflow-hidden flex-shrink-0">
+                    <Image
+                      src={p.image || "https://via.placeholder.com/40x40?text=🌾"}
+                      alt={p.name}
+                      fill
+                      sizes="40px"
+                      className="object-cover"
+                      onError={(e) => { (e.target as HTMLImageElement).src = "https://via.placeholder.com/40x40?text=🌾"; }}
+                    />
+                  </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-white truncate">{p.name}</p>
                     <p className="text-xs text-gray-400">₹{p.price}/{p.unit || "kg"} · Stock: {p.stock}</p>

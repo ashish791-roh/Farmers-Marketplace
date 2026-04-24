@@ -1,5 +1,7 @@
 "use client";
 
+import Image from "next/image";
+
 import { useEffect, useState, useCallback, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
@@ -229,13 +231,17 @@ export default function BannerCarousel() {
                 style={{ width: "42%" }}
               >
                 <div className="absolute inset-0 rounded-full blur-3xl opacity-30" style={{ background: banner.accentColor }} />
-                <img
-                  src={banner.image}
-                  alt={banner.title}
-                  loading="eager"
-                  className="relative z-10 h-[80%] w-full object-cover rounded-xl md:rounded-2xl shadow-2xl"
-                  onError={(e) => { e.currentTarget.style.display = "none"; }}
-                />
+                <div className="relative z-10 h-[80%] w-full rounded-xl md:rounded-2xl shadow-2xl overflow-hidden">
+                  <Image
+                    src={banner.image}
+                    alt={banner.title}
+                    fill
+                    priority
+                    sizes="(max-width: 768px) 100vw, 80vw"
+                    className="object-cover"
+                    onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+                  />
+                </div>
               </motion.div>
             </div>
 

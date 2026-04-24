@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { useCart } from "@/context/CartContext";
 import { useWishlist } from "@/context/WishlistContext";
 import { useAuth } from "@/context/AuthContext";
@@ -23,6 +24,8 @@ type Props = {
   originalPrice?: number;
   isFeatured?: boolean;
   stock?: number;
+  farmerVerified?: boolean;
+  farmerName?: string;
 };
 
 // ── Skeleton loader ────────────────────────────────────────────────────────────
@@ -93,6 +96,8 @@ const ProductCard = ({
   originalPrice,
   isFeatured,
   stock,
+  farmerVerified,
+  farmerName,
 }: Props) => {
   const { addToCart } = useCart();
   const { addToWishlist, removeFromWishlist, isWishlisted } = useWishlist();
@@ -187,17 +192,20 @@ const ProductCard = ({
         {/* ── IMAGE ZONE ────────────────────────────────────────────────── */}
         <div className="relative overflow-hidden bg-gradient-to-br from-gray-50 to-emerald-50/30">
           <Link href={`/product/${id}`} className="block">
-            <img
-              src={
-                imgError
-                  ? "https://placehold.co/300x220/f0fdf4/16a34a?text=%F0%9F%8C%BF"
-                  : image
-              }
-              alt={name}
-              loading="lazy"
-              onError={() => setImgError(true)}
-              className="w-full h-44 object-cover transition-transform duration-500 ease-out group-hover:scale-[1.08]"
-            />
+            <div className="relative w-full h-44">
+              <Image
+                src={
+                  imgError
+                    ? "https://placehold.co/300x220/f0fdf4/16a34a?text=%F0%9F%8C%BF"
+                    : image
+                }
+                alt={name}
+                fill
+                sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
+                className="object-cover transition-transform duration-500 ease-out group-hover:scale-[1.08]"
+                onError={() => setImgError(true)}
+              />
+            </div>
           </Link>
 
           {/* Subtle dark scrim on hover for depth */}
@@ -325,7 +333,17 @@ const ProductCard = ({
             </h3>
           </Link>
 
-          {/* Rating */}
+          {/* Farmer verified badge */}
+          {farmerVerified && (
+            <div className="flex items-center gap-1 mb-1.5">
+              <span className="inline-flex items-center gap-1 bg-green-50 border border-green-200 text-green-700 text-[10px] font-semibold px-1.5 py-0.5 rounded-full">
+                <svg className="w-2.5 h-2.5 text-green-600 shrink-0" viewBox="0 0 20 20" fill="currentColor">
+                  <path fillRule="evenodd" d="M6.267 3.455a3.066 3.066 0 001.745-.723 3.066 3.066 0 013.976 0 3.066 3.066 0 001.745.723 3.066 3.066 0 012.812 2.812c.051.643.304 1.254.723 1.745a3.066 3.066 0 010 3.976 3.066 3.066 0 00-.723 1.745 3.066 3.066 0 01-2.812 2.812 3.066 3.066 0 00-1.745.723 3.066 3.066 0 01-3.976 0 3.066 3.066 0 00-1.745-.723 3.066 3.066 0 01-2.812-2.812 3.066 3.066 0 00-.723-1.745 3.066 3.066 0 010-3.976 3.066 3.066 0 00.723-1.745 3.066 3.066 0 012.812-2.812zm7.44 5.252a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                </svg>
+                Verified Farmer{farmerName ? ` · ${farmerName}` : ""}
+              </span>
+            </div>
+          )}
           <div className="flex items-center gap-1.5 mb-2">
             <div className="flex items-center gap-0.5 bg-green-600 text-white text-[10px] font-bold px-1.5 py-[2px] rounded">
               <span>{rating.toFixed(1)}</span>

@@ -7,8 +7,34 @@ import Script from "next/script";
 import BottomNav from "@/components/BottomNav";
 
 export const metadata = {
-  title: "FarmX – Fresh Direct from Farmers",
-  description: "Fresh farm products directly from farmers 🌿",
+  title: {
+    default: "FarmX – Fresh Direct from Farmers",
+    template: "%s | FarmX",
+  },
+  description:
+    "Buy fresh vegetables, fruits, dairy and grains directly from verified local farmers. Best prices, zero middlemen.",
+  keywords: [
+    "fresh vegetables",
+    "farm products",
+    "buy direct from farmers",
+    "organic produce",
+    "FarmX",
+    "online grocery",
+  ],
+  openGraph: {
+    title: "FarmX – Fresh Direct from Farmers",
+    description:
+      "Buy fresh vegetables, fruits, dairy and grains directly from verified local farmers.",
+    type: "website",
+    locale: "en_IN",
+    siteName: "FarmX",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "FarmX – Fresh Direct from Farmers",
+    description:
+      "Buy fresh produce directly from verified local farmers. Best prices, zero middlemen.",
+  },
 };
 
 export default function RootLayout({

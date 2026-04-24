@@ -1,5 +1,7 @@
 "use client";
 
+import Image from "next/image";
+
 import { useEffect, useState } from "react";
 import { db } from "@/lib/firebase";
 import { collection, onSnapshot, query, where, deleteDoc, doc } from "firebase/firestore";
@@ -117,12 +119,14 @@ export default function FarmerProducts() {
               transition={{ delay: i * 0.04 }}
               className="bg-white/10 backdrop-blur rounded-2xl border border-white/10 overflow-hidden hover:border-green-500/40 transition"
             >
-              <div className="relative">
-                <img
+              <div className="relative h-40">
+                <Image
                   src={p.image || "https://via.placeholder.com/300x200?text=🌾"}
                   alt={p.name}
-                  className="h-40 w-full object-cover"
-                  onError={(e) => { e.currentTarget.src = "https://via.placeholder.com/300x200?text=🌾"; }}
+                  fill
+                  sizes="(max-width: 640px) 100vw, 50vw"
+                  className="object-cover"
+                  onError={(e) => { (e.target as HTMLImageElement).src = "https://via.placeholder.com/300x200?text=🌾"; }}
                 />
                 <span className={`absolute top-2 right-2 flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium ${getStatusBadge(p.status || "pending")}`}>
                   {getStatusIcon(p.status || "pending")}

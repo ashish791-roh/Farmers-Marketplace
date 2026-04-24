@@ -383,6 +383,8 @@ export default function SmartRecommendations({ allProducts, loading }: Props) {
                       unit={p.unit}
                       category={p.category}
                       stock={p.stock}
+                      farmerVerified={p.farmerVerified}
+                      farmerName={p.farmerName}
                       originalPrice={
                         p.price > 40
                           ? Math.round(p.price * (1.15 + Math.random() * 0.15))

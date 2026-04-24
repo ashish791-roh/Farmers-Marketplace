@@ -1,5 +1,7 @@
 "use client";
 
+import Image from "next/image";
+
 import { useEffect, useState } from "react";
 import { db } from "@/lib/firebase";
 import { collection, onSnapshot, deleteDoc, doc } from "firebase/firestore";
@@ -73,11 +75,15 @@ export default function AdminProducts() {
               transition={{ delay: i * 0.04 }}
               className="bg-white/10 backdrop-blur rounded-2xl border border-white/10 overflow-hidden hover:border-green-500/40 transition"
             >
-              <img
-                src={p.image || "https://via.placeholder.com/300x200?text=No+Image"}
-                alt={p.name}
-                className="h-40 w-full object-cover"
-              />
+              <div className="relative h-40">
+                <Image
+                  src={p.image || "https://via.placeholder.com/300x200?text=No+Image"}
+                  alt={p.name}
+                  fill
+                  sizes="(max-width: 640px) 100vw, 33vw"
+                  className="object-cover"
+                />
+              </div>
               <div className="p-4">
                 <h3 className="font-semibold text-white truncate">{p.name}</h3>
                 <p className="text-green-400 font-bold mt-1">₹{p.price}</p>

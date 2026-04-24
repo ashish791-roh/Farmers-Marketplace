@@ -1,5 +1,7 @@
 "use client";
 
+import Image from "next/image";
+
 import { useEffect, useState } from "react";
 import { db } from "@/lib/firebase";
 import {
@@ -103,6 +105,7 @@ export default function AdminNotifications() {
         farmerEmail: product.farmerEmail || "",
         createdAt: serverTimestamp(),
         approved: true,
+        farmerVerified: true,
       });
 
       // 3. Create notification for farmer
@@ -281,12 +284,16 @@ export default function AdminNotifications() {
                   >
                     <div className="flex flex-col md:flex-row gap-5">
                       {/* PRODUCT IMAGE */}
-                      <img
-                        src={product.image || "https://via.placeholder.com/120x120?text=🌾"}
-                        alt={product.name}
-                        className="w-full md:w-32 h-32 object-cover rounded-xl flex-shrink-0"
-                        onError={(e) => { e.currentTarget.src = "https://via.placeholder.com/120x120?text=🌾"; }}
-                      />
+                      <div className="relative w-full md:w-32 h-32 rounded-xl overflow-hidden flex-shrink-0">
+                        <Image
+                          src={product.image || "https://via.placeholder.com/120x120?text=🌾"}
+                          alt={product.name}
+                          fill
+                          sizes="128px"
+                          className="object-cover"
+                          onError={(e) => { (e.target as HTMLImageElement).src = "https://via.placeholder.com/120x120?text=🌾"; }}
+                        />
+                      </div>
 
                       {/* PRODUCT DETAILS */}
                       <div className="flex-1 min-w-0">
@@ -379,12 +386,16 @@ export default function AdminNotifications() {
                       key={product.id}
                       className="flex items-center gap-4 p-4 bg-white/5 rounded-xl border border-white/10"
                     >
-                      <img
-                        src={product.image || "https://via.placeholder.com/50x50?text=🌾"}
-                        alt={product.name}
-                        className="w-12 h-12 rounded-lg object-cover flex-shrink-0"
-                        onError={(e) => { e.currentTarget.src = "https://via.placeholder.com/50x50?text=🌾"; }}
-                      />
+                      <div className="relative w-12 h-12 rounded-lg overflow-hidden flex-shrink-0">
+                        <Image
+                          src={product.image || "https://via.placeholder.com/50x50?text=🌾"}
+                          alt={product.name}
+                          fill
+                          sizes="48px"
+                          className="object-cover"
+                          onError={(e) => { (e.target as HTMLImageElement).src = "https://via.placeholder.com/50x50?text=🌾"; }}
+                        />
+                      </div>
                       <div className="flex-1 min-w-0">
                         <p className="font-medium text-white truncate">{product.name}</p>
                         <p className="text-xs text-gray-400">{product.farmerName} · ₹{product.price}</p>

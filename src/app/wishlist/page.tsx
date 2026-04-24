@@ -1,5 +1,7 @@
 "use client";
 
+import Image from "next/image";
+
 import { useWishlist } from "@/context/WishlistContext";
 import { useCart } from "@/context/CartContext";
 import { useAuth } from "@/context/AuthContext";
@@ -51,13 +53,51 @@ export default function WishlistPage() {
         </div>
 
         {wishlist.length === 0 ? (
-          <div className="text-center py-20 border-2 border-dashed border-gray-200 rounded-2xl">
-            <PackageOpen size={56} className="mx-auto mb-4 text-gray-300" />
-            <h2 className="text-xl font-semibold text-gray-600 mb-2">Your wishlist is empty</h2>
-            <p className="text-gray-400 mb-6">Save products you love and come back to them anytime.</p>
-            <Link href="/" className="bg-green-600 hover:bg-green-700 text-white px-6 py-3 rounded-xl font-semibold transition">
-              Browse Products
-            </Link>
+          <div className="flex flex-col items-center justify-center py-16 text-center">
+            {/* Illustration */}
+            <div className="relative mb-8">
+              <svg width="180" height="160" viewBox="0 0 180 160" fill="none" xmlns="http://www.w3.org/2000/svg">
+                {/* Background circle */}
+                <circle cx="90" cy="85" r="70" fill="#f0fdf4" />
+                {/* Shopping basket */}
+                <rect x="52" y="80" width="76" height="48" rx="8" fill="#dcfce7" stroke="#86efac" strokeWidth="1.5"/>
+                {/* Basket handle */}
+                <path d="M65 80 Q90 52 115 80" stroke="#86efac" strokeWidth="2.5" fill="none" strokeLinecap="round"/>
+                {/* Basket weave lines */}
+                <line x1="70" y1="80" x2="70" y2="128" stroke="#bbf7d0" strokeWidth="1"/>
+                <line x1="90" y1="80" x2="90" y2="128" stroke="#bbf7d0" strokeWidth="1"/>
+                <line x1="110" y1="80" x2="110" y2="128" stroke="#bbf7d0" strokeWidth="1"/>
+                <line x1="52" y1="100" x2="128" y2="100" stroke="#bbf7d0" strokeWidth="1"/>
+                {/* Big heart */}
+                <path d="M90 73 C90 73 78 62 70 66 C62 70 62 80 70 86 L90 104 L110 86 C118 80 118 70 110 66 C102 62 90 73 90 73Z" fill="#fca5a5" stroke="#f87171" strokeWidth="1.5"/>
+                {/* Sparkles */}
+                <circle cx="42" cy="60" r="3" fill="#fde68a"/>
+                <circle cx="140" cy="55" r="2" fill="#a7f3d0"/>
+                <circle cx="148" cy="75" r="3" fill="#fca5a5"/>
+                <circle cx="35" cy="85" r="2" fill="#86efac"/>
+                {/* Stars */}
+                <path d="M42 40 L43.5 44 L47 44 L44.5 46.5 L45.5 50 L42 48 L38.5 50 L39.5 46.5 L37 44 L40.5 44Z" fill="#fde68a"/>
+                <path d="M140 38 L141 41 L144 41 L141.5 43 L142.5 46 L140 44.5 L137.5 46 L138.5 43 L136 41 L139 41Z" fill="#bbf7d0"/>
+              </svg>
+            </div>
+            <h2 className="text-2xl font-bold text-gray-800 mb-2">Your wishlist is empty</h2>
+            <p className="text-gray-400 text-sm mb-8 max-w-xs leading-relaxed">
+              Tap the ❤️ on any product to save it here. Your saved items are just a tap away!
+            </p>
+            <div className="flex flex-col sm:flex-row gap-3">
+              <Link
+                href="/products"
+                className="inline-flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 text-white px-8 py-3 rounded-2xl font-bold transition-all active:scale-95 shadow-sm"
+              >
+                🛒 Browse Products
+              </Link>
+              <Link
+                href="/"
+                className="inline-flex items-center justify-center gap-2 border border-gray-200 text-gray-600 hover:border-green-300 hover:text-green-700 px-8 py-3 rounded-2xl font-semibold transition-all"
+              >
+                🌱 View Fresh Picks
+              </Link>
+            </div>
           </div>
         ) : (
           <AnimatePresence>
@@ -71,12 +111,14 @@ export default function WishlistPage() {
                   exit={{ opacity: 0, scale: 0.9 }}
                   className="bg-white rounded-2xl shadow hover:shadow-lg overflow-hidden transition"
                 >
-                  <Link href={`/product/${item.id}`}>
-                    <img
+                  <Link href={`/product/${item.id}`} className="block relative h-44 overflow-hidden">
+                    <Image
                       src={item.image || "https://via.placeholder.com/300x200?text=Product"}
                       alt={item.name}
-                      className="h-44 w-full object-cover hover:scale-105 transition duration-300"
-                      onError={(e) => { e.currentTarget.src = "https://via.placeholder.com/300x200?text=Product"; }}
+                      fill
+                      sizes="(max-width: 640px) 50vw, 33vw"
+                      className="object-cover hover:scale-105 transition duration-300"
+                      onError={(e) => { (e.target as HTMLImageElement).src = "https://via.placeholder.com/300x200?text=Product"; }}
                     />
                   </Link>
                   <div className="p-4">
