@@ -361,7 +361,7 @@ export default function Navbar() {
       <div className={`w-full sticky top-0 z-50 transition-shadow duration-200 ${scrolled ? "shadow-lg" : "shadow-sm"}`}>
 
         {/* ── TOP OFFER STRIP ── */}
-        <div className="bg-green-700 text-white overflow-hidden">
+        <div className="hidden md:block bg-green-700 text-white overflow-hidden">
           <div className="max-w-7xl mx-auto px-3 md:px-6 py-1.5 flex items-center justify-between gap-4">
             <AnimatePresence mode="wait">
               <motion.p

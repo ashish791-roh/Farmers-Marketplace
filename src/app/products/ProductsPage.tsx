@@ -44,6 +44,7 @@ interface Product {
   farmerName?: string;
   farmerVerified?: boolean;
   unit?: string;
+  stock?: number;
   createdAt?: any;
 }
 
@@ -108,8 +109,11 @@ function ProductCard({
   const rating = (3.5 + Math.random() * 1.4).toFixed(1);
   const reviews = Math.floor(Math.random() * 200 + 30);
 
+  const isOutOfStock = product.stock !== undefined && product.stock === 0;
+
   const handleCart = (e: React.MouseEvent<HTMLButtonElement>) => {
     e.preventDefault();
+    if (isOutOfStock) return;
     const rect = e.currentTarget.getBoundingClientRect();
     setRipple({ x: e.clientX - rect.left, y: e.clientY - rect.top });
     setTimeout(() => setRipple(null), 500);
@@ -154,12 +158,20 @@ function ProductCard({
             alt={product.name}
             fill
             sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
-            className="object-cover group-hover:scale-105 transition-transform duration-500"
+            className={`object-cover group-hover:scale-105 transition-transform duration-500 ${isOutOfStock ? "opacity-40 grayscale" : ""}`}
             onError={(e) => {
               (e.target as HTMLImageElement).src =
                 "https://placehold.co/300x225/e8f5e9/2e7d32?text=🌱";
             }}
           />
+          {/* Out of stock overlay */}
+          {isOutOfStock && (
+            <div className="absolute inset-0 flex items-center justify-center">
+              <span className="bg-gray-800/75 text-white text-[10px] font-bold px-2.5 py-1 rounded-full tracking-wide uppercase">
+                Out of Stock
+              </span>
+            </div>
+          )}
         </div>
 
         {/* Info */}
@@ -213,7 +225,12 @@ function ProductCard({
           {/* Add to Cart */}
           <button
             onClick={handleCart}
-            className="relative mt-2 w-full bg-green-600 hover:bg-green-700 text-white text-xs font-bold py-2 rounded-xl overflow-hidden transition-all duration-200 active:scale-95 flex items-center justify-center gap-1.5"
+            disabled={adding || isOutOfStock}
+            className={`relative mt-2 w-full text-white text-xs font-bold py-2 rounded-xl overflow-hidden transition-all duration-200 active:scale-95 flex items-center justify-center gap-1.5 ${
+              isOutOfStock
+                ? "bg-gray-300 cursor-not-allowed"
+                : "bg-green-600 hover:bg-green-700"
+            }`}
           >
             {ripple && (
               <span
@@ -227,8 +244,14 @@ function ProductCard({
                 }}
               />
             )}
-            <ShoppingCart size={13} />
-            {adding ? "Adding..." : "Add to Cart"}
+            {isOutOfStock ? (
+              "Out of Stock"
+            ) : (
+              <>
+                <ShoppingCart size={13} />
+                {adding ? "Adding..." : "Add to Cart"}
+              </>
+            )}
           </button>
         </div>
       </div>
@@ -378,6 +401,7 @@ function ProductsInner() {
           originalPrice:
             doc.data().originalPrice ??
             Math.round(doc.data().price * (1.1 + Math.random() * 0.3)),
+          stock: doc.data().stock,
         })) as Product[];
 
         setProducts((prev) =>
@@ -606,24 +630,52 @@ function ProductsInner() {
           <div className="flex flex-col items-center justify-center py-16 text-center">
             {/* Illustration */}
             <div className="relative mb-8">
-              <svg width="180" height="160" viewBox="0 0 180 160" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <circle cx="90" cy="82" r="68" fill="#f0fdf4"/>
-                <circle cx="82" cy="74" r="30" fill="white" stroke="#86efac" strokeWidth="3"/>
-                <circle cx="82" cy="74" r="22" fill="#dcfce7"/>
-                <text x="82" y="82" textAnchor="middle" fontSize="22" fill="#34d399" fontWeight="bold">?</text>
-                <line x1="105" y1="97" x2="122" y2="114" stroke="#86efac" strokeWidth="5" strokeLinecap="round"/>
-                <circle cx="38" cy="55" r="3" fill="#fde68a"/>
-                <circle cx="145" cy="50" r="2.5" fill="#fca5a5"/>
-                <circle cx="36" cy="105" r="2" fill="#86efac"/>
-                <circle cx="148" cy="100" r="3" fill="#a7f3d0"/>
-                <path d="M38 35 L39.5 39 L43 39 L40.5 41.5 L41.5 45 L38 43 L34.5 45 L35.5 41.5 L33 39 L36.5 39Z" fill="#fde68a"/>
-                <path d="M144 34 L145 37 L148 37 L145.5 39 L146.5 42 L144 40.5 L141.5 42 L142.5 39 L140 37 L143 37Z" fill="#bbf7d0"/>
-              </svg>
+              {/* Out of stock: show empty box icon; search miss: show ? icon */}
+              {selectedCategory !== "All" && !search ? (
+                <svg width="180" height="160" viewBox="0 0 180 160" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <circle cx="90" cy="82" r="68" fill="#fef2f2"/>
+                  <rect x="55" y="55" width="70" height="55" rx="8" fill="white" stroke="#fca5a5" strokeWidth="3"/>
+                  <rect x="55" y="55" width="70" height="18" rx="8" fill="#fee2e2"/>
+                  <line x1="70" y1="85" x2="110" y2="85" stroke="#fca5a5" strokeWidth="3" strokeLinecap="round"/>
+                  <line x1="70" y1="96" x2="95" y2="96" stroke="#fca5a5" strokeWidth="3" strokeLinecap="round"/>
+                  <circle cx="38" cy="55" r="3" fill="#fde68a"/>
+                  <circle cx="145" cy="50" r="2.5" fill="#fca5a5"/>
+                  <path d="M38 35 L39.5 39 L43 39 L40.5 41.5 L41.5 45 L38 43 L34.5 45 L35.5 41.5 L33 39 L36.5 39Z" fill="#fde68a"/>
+                </svg>
+              ) : (
+                <svg width="180" height="160" viewBox="0 0 180 160" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <circle cx="90" cy="82" r="68" fill="#f0fdf4"/>
+                  <circle cx="82" cy="74" r="30" fill="white" stroke="#86efac" strokeWidth="3"/>
+                  <circle cx="82" cy="74" r="22" fill="#dcfce7"/>
+                  <text x="82" y="82" textAnchor="middle" fontSize="22" fill="#34d399" fontWeight="bold">?</text>
+                  <line x1="105" y1="97" x2="122" y2="114" stroke="#86efac" strokeWidth="5" strokeLinecap="round"/>
+                  <circle cx="38" cy="55" r="3" fill="#fde68a"/>
+                  <circle cx="145" cy="50" r="2.5" fill="#fca5a5"/>
+                  <circle cx="36" cy="105" r="2" fill="#86efac"/>
+                  <circle cx="148" cy="100" r="3" fill="#a7f3d0"/>
+                  <path d="M38 35 L39.5 39 L43 39 L40.5 41.5 L41.5 45 L38 43 L34.5 45 L35.5 41.5 L33 39 L36.5 39Z" fill="#fde68a"/>
+                  <path d="M144 34 L145 37 L148 37 L145.5 39 L146.5 42 L144 40.5 L141.5 42 L142.5 39 L140 37 L143 37Z" fill="#bbf7d0"/>
+                </svg>
+              )}
             </div>
-            <h3 className="text-2xl font-bold text-gray-800 mb-2">No products found</h3>
-            <p className="text-gray-400 text-sm mb-8 max-w-xs leading-relaxed">
-              We couldn't find what you're looking for. Try adjusting your filters or browse all fresh produce.
-            </p>
+            {selectedCategory !== "All" && !search ? (
+              <>
+                <span className="inline-flex items-center gap-1.5 bg-red-100 text-red-600 text-xs font-bold px-3 py-1 rounded-full mb-3 uppercase tracking-wide">
+                  🚫 Out of Stock
+                </span>
+                <h3 className="text-2xl font-bold text-gray-800 mb-2">{selectedCategory} Unavailable</h3>
+                <p className="text-gray-400 text-sm mb-8 max-w-xs leading-relaxed">
+                  No <span className="font-semibold text-gray-600">{selectedCategory}</span> products are currently available. Check back soon or browse other categories.
+                </p>
+              </>
+            ) : (
+              <>
+                <h3 className="text-2xl font-bold text-gray-800 mb-2">No products found</h3>
+                <p className="text-gray-400 text-sm mb-8 max-w-xs leading-relaxed">
+                  We couldn't find what you're looking for. Try adjusting your filters or browse all fresh produce.
+                </p>
+              </>
+            )}
             <div className="flex flex-col sm:flex-row gap-3">
               <button
                 onClick={resetFilters}
