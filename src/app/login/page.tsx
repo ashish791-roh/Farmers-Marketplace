@@ -6,7 +6,7 @@ import {
   signInWithPopup,
 } from "firebase/auth";
 import { auth, googleProvider } from "@/lib/firebase";
-import { doc, getDoc } from "firebase/firestore";
+import { doc, getDoc, setDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
@@ -42,10 +42,26 @@ export default function Login() {
   const handleGoogle = async () => {
     try {
       const result = await signInWithPopup(auth, googleProvider);
-      toast.success("Google login successful 🚀");
+      const user = result.user;
 
-      const snap = await getDoc(doc(db, "users", result.user.uid));
-      const role = snap.exists() ? snap.data().role : null;
+      const ref = doc(db, "users", user.uid);
+      const snap = await getDoc(ref);
+
+      // NEW USER — save to Firestore for the first time
+      if (!snap.exists()) {
+        await setDoc(ref, {
+          email: user.email,
+          name: user.displayName || "",
+          role: "user",
+          createdAt: new Date(),
+          provider: "google",
+        });
+        toast.success("Welcome to FarmX! 🌱");
+      } else {
+        toast.success("Google login successful 🚀");
+      }
+
+      const role = snap.exists() ? snap.data().role : "user";
       router.push(redirectByRole(role));
     } catch (err: any) {
       toast.error(err.message);
