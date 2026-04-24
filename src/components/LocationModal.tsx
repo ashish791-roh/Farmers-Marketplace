@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, lazy, Suspense } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   MapPin,
@@ -13,26 +13,31 @@ import {
 } from "lucide-react";
 import toast from "react-hot-toast";
 
+// Lazy load the map component to avoid SSR issues with Leaflet
+const IndiaMapSelector = lazy(() => import("@/components/IndiaMapSelector"));
+
 // ── Types ──────────────────────────────────────────────────────────────────────
 export type LocationInfo = {
   city: string;
   pincode?: string;
+  state?: string;
+  district?: string;
 };
 
 // ── Popular cities with pincodes ───────────────────────────────────────────────
 const POPULAR_CITIES: LocationInfo[] = [
-  { city: "New Delhi", pincode: "110001" },
-  { city: "Mumbai", pincode: "400001" },
-  { city: "Bangalore", pincode: "560001" },
-  { city: "Chennai", pincode: "600001" },
-  { city: "Hyderabad", pincode: "500001" },
-  { city: "Kolkata", pincode: "700001" },
-  { city: "Pune", pincode: "411001" },
-  { city: "Ahmedabad", pincode: "380001" },
-  { city: "Jaipur", pincode: "302001" },
-  { city: "Lucknow", pincode: "226001" },
-  { city: "Chandigarh", pincode: "160001" },
-  { city: "Indore", pincode: "452001" },
+  { city: "New Delhi", pincode: "110001", state: "Delhi", district: "New Delhi" },
+  { city: "Mumbai", pincode: "400001", state: "Maharashtra", district: "Mumbai City" },
+  { city: "Bangalore", pincode: "560001", state: "Karnataka", district: "Bengaluru Urban" },
+  { city: "Chennai", pincode: "600001", state: "Tamil Nadu", district: "Chennai" },
+  { city: "Hyderabad", pincode: "500001", state: "Telangana", district: "Hyderabad" },
+  { city: "Kolkata", pincode: "700001", state: "West Bengal", district: "Kolkata" },
+  { city: "Pune", pincode: "411001", state: "Maharashtra", district: "Pune" },
+  { city: "Ahmedabad", pincode: "380001", state: "Gujarat", district: "Ahmedabad" },
+  { city: "Jaipur", pincode: "302001", state: "Rajasthan", district: "Jaipur" },
+  { city: "Lucknow", pincode: "226001", state: "Uttar Pradesh", district: "Lucknow" },
+  { city: "Chandigarh", pincode: "160001", state: "Chandigarh", district: "Chandigarh" },
+  { city: "Indore", pincode: "452001", state: "Madhya Pradesh", district: "Indore" },
 ];
 
 // ── Local storage key ─────────────────────────────────────────────────────────
@@ -72,16 +77,17 @@ export default function LocationModal({
   const [detected, setDetected] = useState(false);
   const [pincodeInput, setPincodeInput] = useState("");
   const [pincodeError, setPincodeError] = useState("");
-  const [tab, setTab] = useState<"city" | "pincode">("city");
+  const [tab, setTab] = useState<"city" | "pincode" | "map">("city");
 
   const searchRef = useRef<HTMLInputElement>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
 
   // Filter cities by query
   const filtered = query.trim()
-    ? POPULAR_CITIES.filter((c) =>
-        c.city.toLowerCase().includes(query.toLowerCase()) ||
-        (c.pincode && c.pincode.includes(query))
+    ? POPULAR_CITIES.filter(
+        (c) =>
+          c.city.toLowerCase().includes(query.toLowerCase()) ||
+          (c.pincode && c.pincode.includes(query))
       )
     : POPULAR_CITIES;
 
@@ -107,7 +113,6 @@ export default function LocationModal({
       async (pos) => {
         try {
           const { latitude, longitude } = pos.coords;
-          // Use OpenStreetMap Nominatim (free, no key required)
           const res = await fetch(
             `https://nominatim.openstreetmap.org/reverse?lat=${latitude}&lon=${longitude}&format=json&addressdetails=1`,
             { headers: { "Accept-Language": "en" } }
@@ -115,13 +120,11 @@ export default function LocationModal({
           const data = await res.json();
           const addr = data.address || {};
           const city =
-            addr.city ||
-            addr.town ||
-            addr.village ||
-            addr.county ||
-            "Your Location";
+            addr.city || addr.town || addr.village || addr.county || "Your Location";
           const pincode = addr.postcode || "";
-          const loc: LocationInfo = { city, pincode };
+          const state = addr.state || "";
+          const district = addr.county || addr.state_district || city;
+          const loc: LocationInfo = { city, pincode, state, district };
           setDetecting(false);
           setDetected(true);
           onLocationChange(loc);
@@ -151,6 +154,20 @@ export default function LocationModal({
     onClose();
   };
 
+  // Handle map selection (state -> district)
+  const handleMapSelect = (state: string, district: string, pincode?: string) => {
+    const loc: LocationInfo = {
+      city: district,
+      pincode: pincode || "",
+      state,
+      district,
+    };
+    onLocationChange(loc);
+    storeLocation(loc);
+    toast.success(`📍 Delivering to ${district}, ${state}`);
+    onClose();
+  };
+
   // Submit pincode
   const handlePincodeSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -160,14 +177,18 @@ export default function LocationModal({
       return;
     }
     const match = POPULAR_CITIES.find((c) => c.pincode === pin);
-    const loc: LocationInfo = match
-      ? match
-      : { city: "Your Location", pincode: pin };
+    const loc: LocationInfo = match ? match : { city: "Your Location", pincode: pin };
     onLocationChange(loc);
     storeLocation(loc);
     toast.success(`📍 Delivering to ${loc.city || pin}`);
     onClose();
   };
+
+  const TABS = [
+    { id: "city" as const, label: "🏙️ City" },
+    { id: "map" as const, label: "🗺️ Map" },
+    { id: "pincode" as const, label: "📍 Pincode" },
+  ];
 
   return (
     <AnimatePresence>
@@ -190,8 +211,8 @@ export default function LocationModal({
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 40, scale: 0.96 }}
             transition={{ type: "spring", stiffness: 400, damping: 32 }}
-            className="fixed bottom-0 left-0 right-0 md:bottom-auto md:top-1/2 md:left-1/2 md:-translate-x-1/2 md:-translate-y-1/2 md:max-w-md md:w-full z-[75] bg-white md:rounded-2xl rounded-t-3xl shadow-2xl overflow-hidden"
-            style={{ maxHeight: "90vh" }}
+            className="fixed bottom-0 left-0 right-0 md:bottom-auto md:top-1/2 md:left-1/2 md:-translate-x-1/2 md:-translate-y-1/2 md:max-w-lg md:w-full z-[75] bg-white md:rounded-2xl rounded-t-3xl shadow-2xl overflow-hidden"
+            style={{ maxHeight: "92vh" }}
           >
             {/* Header */}
             <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
@@ -202,7 +223,14 @@ export default function LocationModal({
                 <div>
                   <h2 className="text-sm font-bold text-gray-900">Delivery Location</h2>
                   <p className="text-[11px] text-gray-400">
-                    Currently: <span className="font-semibold text-green-600">{currentLocation.city}</span>
+                    Currently:{" "}
+                    <span className="font-semibold text-green-600">
+                      {currentLocation.district || currentLocation.city}
+                    </span>
+                    {currentLocation.state &&
+                      currentLocation.state !== (currentLocation.district || currentLocation.city) && (
+                        <span className="text-gray-400">, {currentLocation.state}</span>
+                      )}
                     {currentLocation.pincode && ` – ${currentLocation.pincode}`}
                   </p>
                 </div>
@@ -254,31 +282,35 @@ export default function LocationModal({
 
             {/* Tabs */}
             <div className="flex gap-1 px-5 mb-3">
-              {(["city", "pincode"] as const).map((t) => (
+              {TABS.map((t) => (
                 <button
-                  key={t}
-                  onClick={() => setTab(t)}
+                  key={t.id}
+                  onClick={() => setTab(t.id)}
                   className={`flex-1 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                    tab === t
-                      ? "bg-green-600 text-white"
+                    tab === t.id
+                      ? t.id === "map"
+                        ? "bg-blue-600 text-white"
+                        : "bg-green-600 text-white"
                       : "bg-gray-100 text-gray-500 hover:bg-gray-200"
                   }`}
                 >
-                  {t === "city" ? "🏙️ Search City" : "📍 Enter Pincode"}
+                  {t.label}
                 </button>
               ))}
             </div>
 
             {/* Tab content */}
-            <div className="px-5 overflow-y-auto" style={{ maxHeight: "calc(90vh - 260px)" }}>
-              {tab === "city" ? (
+            <div
+              className="px-5 overflow-y-auto"
+              style={{
+                maxHeight: tab === "map" ? "calc(92vh - 230px)" : "calc(92vh - 260px)",
+              }}
+            >
+              {/* ── CITY TAB ── */}
+              {tab === "city" && (
                 <>
-                  {/* Search bar */}
                   <div className="relative mb-3">
-                    <Search
-                      size={15}
-                      className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
-                    />
+                    <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
                     <input
                       ref={searchRef}
                       type="text"
@@ -297,7 +329,6 @@ export default function LocationModal({
                     )}
                   </div>
 
-                  {/* City list */}
                   <div className="space-y-1 pb-5">
                     {filtered.length === 0 ? (
                       <p className="text-center text-sm text-gray-400 py-6">
@@ -322,24 +353,16 @@ export default function LocationModal({
                                   isSelected ? "bg-green-600" : "bg-gray-100"
                                 }`}
                               >
-                                <MapPin
-                                  size={13}
-                                  className={isSelected ? "text-white" : "text-gray-400"}
-                                />
+                                <MapPin size={13} className={isSelected ? "text-white" : "text-gray-400"} />
                               </div>
                               <div className="text-left">
-                                <p
-                                  className={`text-sm font-semibold ${
-                                    isSelected ? "text-green-700" : "text-gray-800"
-                                  }`}
-                                >
+                                <p className={`text-sm font-semibold ${isSelected ? "text-green-700" : "text-gray-800"}`}>
                                   {loc.city}
                                 </p>
-                                {loc.pincode && (
-                                  <p className="text-[11px] text-gray-400">
-                                    PIN: {loc.pincode}
-                                  </p>
-                                )}
+                                <p className="text-[11px] text-gray-400">
+                                  {loc.state && `${loc.state} · `}
+                                  {loc.pincode && `PIN: ${loc.pincode}`}
+                                </p>
                               </div>
                             </div>
                             {isSelected ? (
@@ -353,14 +376,39 @@ export default function LocationModal({
                     )}
                   </div>
                 </>
-              ) : (
+              )}
+
+              {/* ── MAP TAB ── */}
+              {tab === "map" && (
+                <div className="pb-5">
+                  <p className="text-[11px] text-gray-400 mb-3 text-center">
+                    Click a dot on the map or search below — select State → District
+                  </p>
+                  <Suspense
+                    fallback={
+                      <div className="flex items-center justify-center h-48">
+                        <div className="flex flex-col items-center gap-2">
+                          <Loader2 size={24} className="animate-spin text-green-500" />
+                          <span className="text-xs text-gray-400">Loading map…</span>
+                        </div>
+                      </div>
+                    }
+                  >
+                    <IndiaMapSelector
+                      onSelect={handleMapSelect}
+                      selectedState={currentLocation.state}
+                      selectedDistrict={currentLocation.district}
+                    />
+                  </Suspense>
+                </div>
+              )}
+
+              {/* ── PINCODE TAB ── */}
+              {tab === "pincode" && (
                 <form onSubmit={handlePincodeSubmit} className="pb-5">
                   <div className="space-y-3">
                     <div className="relative">
-                      <MapPin
-                        size={15}
-                        className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
-                      />
+                      <MapPin size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
                       <input
                         type="text"
                         inputMode="numeric"
