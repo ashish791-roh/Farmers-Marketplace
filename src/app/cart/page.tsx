@@ -66,26 +66,67 @@ function TrustStrip() {
   );
 }
 
-// ── Coupon section ─────────────────────────────────────────────────────────────
-function CouponSection() {
-  const [couponInput, setCouponInput] = useState("");
-  const [applied, setApplied] = useState<string | null>(null);
-  const [open, setOpen] = useState(false);
+// ── Coupon section (server-validated) ─────────────────────────────────────────
+type CouponResult = {
+  valid: boolean;
+  code?: string;
+  description?: string;
+  discountAmount?: number;
+  message: string;
+};
 
-  const COUPONS: Record<string, string> = {
-    FARM10: "10% off on your first order",
-    FRESH20: "₹20 off on orders above ₹299",
-    ORGANIC15: "15% off on organic products",
+type AvailableCoupon = { code: string; description: string };
+
+function CouponSection({ orderTotal }: { orderTotal: number }) {
+  const [couponInput, setCouponInput] = useState("");
+  const [applied, setApplied] = useState<CouponResult | null>(null);
+  const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [availableCoupons, setAvailableCoupons] = useState<AvailableCoupon[]>([]);
+
+  // Fetch public coupon list (codes + descriptions only — no logic) from server
+  useEffect(() => {
+    fetch("/api/coupon/validate")
+      .then((r) => r.json())
+      .then((data) => setAvailableCoupons(data.coupons || []))
+      .catch(() => {});
+  }, []);
+
+  const handleApply = async (code?: string) => {
+    const codeToApply = (code ?? couponInput).trim().toUpperCase();
+    if (!codeToApply) return;
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      const res = await fetch("/api/coupon/validate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code: codeToApply, orderTotal }),
+      });
+      const data: CouponResult = await res.json();
+
+      if (data.valid) {
+        setApplied(data);
+        setOpen(false);
+        setCouponInput("");
+      } else {
+        setApplied(null);
+        setError(data.message);
+      }
+    } catch {
+      setError("Could not validate coupon. Please try again.");
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handleApply = () => {
-    const code = couponInput.trim().toUpperCase();
-    if (COUPONS[code]) {
-      setApplied(code);
-      setOpen(false);
-    } else {
-      setApplied(null);
-    }
+  const handleRemove = () => {
+    setApplied(null);
+    setError(null);
+    setCouponInput("");
   };
 
   return (
@@ -100,7 +141,9 @@ function CouponSection() {
           </div>
           <span className="text-sm font-semibold text-gray-800">
             {applied ? (
-              <span className="text-green-600">Coupon Applied: {applied}</span>
+              <span className="text-green-600">
+                Coupon Applied: {applied.code} (−₹{applied.discountAmount})
+              </span>
             ) : (
               "Apply Coupon / Promo Code"
             )}
@@ -115,48 +158,78 @@ function CouponSection() {
 
       {open && (
         <div className="px-4 pb-4 border-t border-gray-50">
-          <div className="flex gap-2 mt-3">
-            <input
-              type="text"
-              placeholder="Enter coupon code"
-              value={couponInput}
-              onChange={(e) => setCouponInput(e.target.value.toUpperCase())}
-              className="flex-1 px-3 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-green-400 focus:border-transparent"
-            />
-            <button
-              onClick={handleApply}
-              className="px-4 py-2.5 bg-green-600 hover:bg-green-700 text-white text-sm font-bold rounded-xl transition-colors"
-            >
-              Apply
-            </button>
-          </div>
-
-          <div className="mt-3 space-y-2">
-            <p className="text-xs text-gray-400 font-medium">Available coupons:</p>
-            {Object.entries(COUPONS).map(([code, desc]) => (
-              <div
-                key={code}
-                className="flex items-center justify-between bg-green-50 rounded-xl px-3 py-2"
+          {applied ? (
+            <div className="mt-3 flex items-center justify-between bg-green-50 rounded-xl px-3 py-2.5">
+              <div>
+                <span className="text-green-700 text-xs font-extrabold tracking-widest">
+                  {applied.code}
+                </span>
+                <p className="text-gray-500 text-[10px] mt-0.5">{applied.description}</p>
+                <p className="text-green-600 text-xs font-semibold mt-0.5">
+                  You save ₹{applied.discountAmount}
+                </p>
+              </div>
+              <button
+                onClick={handleRemove}
+                className="text-red-400 text-xs font-bold hover:text-red-600 flex items-center gap-1"
               >
-                <div>
-                  <span className="text-green-700 text-xs font-extrabold tracking-widest">
-                    {code}
-                  </span>
-                  <p className="text-gray-500 text-[10px] mt-0.5">{desc}</p>
-                </div>
-                <button
-                  onClick={() => {
-                    setCouponInput(code);
-                    setApplied(code);
-                    setOpen(false);
+                <X size={12} /> Remove
+              </button>
+            </div>
+          ) : (
+            <>
+              <div className="flex gap-2 mt-3">
+                <input
+                  type="text"
+                  placeholder="Enter coupon code"
+                  value={couponInput}
+                  onChange={(e) => {
+                    setCouponInput(e.target.value.toUpperCase());
+                    setError(null);
                   }}
-                  className="text-green-600 text-xs font-bold hover:text-green-700"
+                  onKeyDown={(e) => e.key === "Enter" && handleApply()}
+                  className="flex-1 px-3 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-green-400 focus:border-transparent"
+                />
+                <button
+                  onClick={() => handleApply()}
+                  disabled={loading || !couponInput.trim()}
+                  className="px-4 py-2.5 bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white text-sm font-bold rounded-xl transition-colors"
                 >
-                  Apply
+                  {loading ? "..." : "Apply"}
                 </button>
               </div>
-            ))}
-          </div>
+
+              {error && (
+                <p className="text-red-500 text-xs mt-2 font-medium">{error}</p>
+              )}
+
+              {availableCoupons.length > 0 && (
+                <div className="mt-3 space-y-2">
+                  <p className="text-xs text-gray-400 font-medium">Available coupons:</p>
+                  {availableCoupons.map(({ code, description }) => (
+                    <div
+                      key={code}
+                      className="flex items-center justify-between bg-green-50 rounded-xl px-3 py-2"
+                    >
+                      <div>
+                        <span className="text-green-700 text-xs font-extrabold tracking-widest">
+                          {code}
+                        </span>
+                        <p className="text-gray-500 text-[10px] mt-0.5">{description}</p>
+                      </div>
+                      <button
+                        onClick={() => handleApply(code)}
+                        disabled={loading}
+                        className="text-green-600 text-xs font-bold hover:text-green-700 disabled:opacity-50"
+                      >
+                        Apply
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
         </div>
       )}
     </div>
@@ -492,7 +565,7 @@ export default function CartPage() {
                 <SavingsPill amount={Math.round(totalSavings)} />
 
                 {/* Coupon */}
-                <CouponSection />
+                <CouponSection orderTotal={total} />
               </div>
 
               {/* ── Right column: Price summary (desktop) ── */}

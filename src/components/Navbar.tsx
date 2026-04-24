@@ -1,10 +1,12 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { useRouter, usePathname } from "next/navigation";
 import { signOut } from "firebase/auth";
 import { auth } from "@/lib/firebase";
+import { db } from "@/lib/firebase";
 import { useAuth } from "@/context/AuthContext";
 import { useRole } from "@/hooks/useRole";
 import { useCart } from "@/context/CartContext";
@@ -16,6 +18,13 @@ import LocationModal, {
   type LocationInfo,
 } from "@/components/LocationModal";
 import {
+  collection,
+  query,
+  orderBy,
+  limit,
+  getDocs,
+} from "firebase/firestore";
+import {
   ShoppingCart,
   Heart,
   User,
@@ -26,6 +35,8 @@ import {
   Crown,
   X,
   MapPin,
+  ArrowRight,
+  TrendingUp,
 } from "lucide-react";
 
 const OFFER_MESSAGES = [
@@ -44,6 +55,179 @@ const CATEGORY_LINKS = [
   { label: "Grains", href: "/products?category=Grains", emoji: "🌾" },
 ];
 
+const POPULAR_SEARCHES = [
+  "Fresh Tomatoes",
+  "Organic Milk",
+  "Alphonso Mangoes",
+  "Brown Rice",
+  "Spinach",
+];
+
+// ── Debounce delay for live search (ms) ───────────────────────────────────────
+const SEARCH_DEBOUNCE_MS = 280;
+// Max live results to show in dropdown
+const MAX_RESULTS = 6;
+
+// ── Product type for search results ───────────────────────────────────────────
+interface SearchProduct {
+  id: string;
+  name: string;
+  price: number;
+  image?: string;
+  category?: string;
+}
+
+// ── useInstantSearch hook ─────────────────────────────────────────────────────
+// Debounces the query, fetches from Firestore, and filters client-side.
+// We fetch a reasonable batch (50) ordered by name and filter locally to
+// avoid needing a full-text index. For larger catalogues, replace with
+// Algolia / Typesense.
+function useInstantSearch(q: string) {
+  const [results, setResults] = useState<SearchProduct[]>([]);
+  const [searching, setSearching] = useState(false);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Cache the full product list so subsequent keystrokes don't re-fetch
+  const cacheRef = useRef<SearchProduct[] | null>(null);
+
+  const runSearch = useCallback(async (term: string) => {
+    if (!term.trim()) {
+      setResults([]);
+      return;
+    }
+
+    setSearching(true);
+    try {
+      // Populate cache once
+      if (!cacheRef.current) {
+        const snap = await getDocs(
+          query(collection(db, "products"), orderBy("name"), limit(200))
+        );
+        cacheRef.current = snap.docs.map((d) => ({
+          id: d.id,
+          name: d.data().name ?? "",
+          price: d.data().price ?? 0,
+          image: d.data().image,
+          category: d.data().category,
+        }));
+      }
+
+      const lower = term.toLowerCase();
+      const matched = cacheRef.current
+        .filter(
+          (p) =>
+            p.name.toLowerCase().includes(lower) ||
+            (p.category ?? "").toLowerCase().includes(lower)
+        )
+        .slice(0, MAX_RESULTS);
+
+      setResults(matched);
+    } catch (err) {
+      console.error("Search error:", err);
+      setResults([]);
+    } finally {
+      setSearching(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (timerRef.current) clearTimeout(timerRef.current);
+    if (!q.trim()) {
+      setResults([]);
+      setSearching(false);
+      return;
+    }
+    setSearching(true);
+    timerRef.current = setTimeout(() => runSearch(q), SEARCH_DEBOUNCE_MS);
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+    };
+  }, [q, runSearch]);
+
+  return { results, searching };
+}
+
+// ── Search Dropdown ───────────────────────────────────────────────────────────
+function SearchDropdown({
+  query: q,
+  results,
+  searching,
+  onSelect,
+  onSeeAll,
+}: {
+  query: string;
+  results: SearchProduct[];
+  searching: boolean;
+  onSelect: () => void;
+  onSeeAll: () => void;
+}) {
+  if (!q.trim()) return null;
+
+  return (
+    <div className="absolute top-full left-0 right-0 mt-1.5 bg-white rounded-2xl shadow-2xl border border-gray-100 overflow-hidden z-50">
+      {searching && results.length === 0 && (
+        <div className="px-4 py-3 flex items-center gap-2 text-sm text-gray-400">
+          <span className="inline-block w-3.5 h-3.5 border-2 border-gray-300 border-t-green-500 rounded-full animate-spin" />
+          Searching…
+        </div>
+      )}
+
+      {!searching && results.length === 0 && (
+        <div className="px-4 py-3 text-sm text-gray-400">
+          No results for <span className="font-semibold text-gray-600">"{q}"</span>
+        </div>
+      )}
+
+      {results.length > 0 && (
+        <>
+          <ul>
+            {results.map((product) => (
+              <li key={product.id}>
+                <Link
+                  href={`/product/${product.id}`}
+                  onClick={onSelect}
+                  className="flex items-center gap-3 px-3 py-2.5 hover:bg-gray-50 transition-colors"
+                >
+                  <div className="w-10 h-10 rounded-xl overflow-hidden bg-green-50 shrink-0 relative border border-gray-100">
+                    <Image
+                      src={product.image || "https://placehold.co/40x40/e8f5e9/2e7d32?text=🌱"}
+                      alt={product.name}
+                      fill
+                      sizes="40px"
+                      className="object-cover"
+                      onError={(e) => {
+                        (e.target as HTMLImageElement).src =
+                          "https://placehold.co/40x40/e8f5e9/2e7d32?text=🌱";
+                      }}
+                    />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-gray-800 truncate">{product.name}</p>
+                    <p className="text-xs text-gray-400">
+                      {product.category && (
+                        <span className="text-green-600 font-medium">{product.category} · </span>
+                      )}
+                      ₹{product.price}
+                    </p>
+                  </div>
+                  <ArrowRight size={13} className="text-gray-300 shrink-0" />
+                </Link>
+              </li>
+            ))}
+          </ul>
+          <button
+            onClick={onSeeAll}
+            className="w-full flex items-center justify-center gap-1.5 px-4 py-2.5 text-xs font-bold text-green-700 bg-green-50 hover:bg-green-100 transition-colors border-t border-gray-100"
+          >
+            See all results for "{q}"
+            <ArrowRight size={12} />
+          </button>
+        </>
+      )}
+    </div>
+  );
+}
+
+// ── Main Navbar ───────────────────────────────────────────────────────────────
 export default function Navbar() {
   const router = useRouter();
   const pathname = usePathname();
@@ -60,6 +244,17 @@ export default function Navbar() {
   const [scrolled, setScrolled] = useState(false);
   const [offerIdx, setOfferIdx] = useState(0);
   const [location, setLocation] = useState<LocationInfo>({ city: "New Delhi", pincode: "110001" });
+  const [desktopDropdownOpen, setDesktopDropdownOpen] = useState(false);
+
+  const { results: searchResults, searching } = useInstantSearch(searchQuery);
+
+  // Refs
+  const profileRef = useRef<HTMLDivElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
+  const desktopSearchRef = useRef<HTMLInputElement>(null);
+  const desktopSearchWrapRef = useRef<HTMLDivElement>(null);
+
+  const cartCount = cart?.reduce((sum, item) => sum + item.quantity, 0) || 0;
 
   // Hydrate location from localStorage after mount
   useEffect(() => {
@@ -72,11 +267,6 @@ export default function Navbar() {
     window.addEventListener("farmx:openLocation", handler);
     return () => window.removeEventListener("farmx:openLocation", handler);
   }, []);
-
-  const profileRef = useRef<HTMLDivElement>(null);
-  const searchRef = useRef<HTMLInputElement>(null);
-
-  const cartCount = cart?.reduce((sum, item) => sum + item.quantity, 0) || 0;
 
   useEffect(() => {
     const t = setInterval(() => setOfferIdx((i) => (i + 1) % OFFER_MESSAGES.length), 3200);
@@ -97,6 +287,7 @@ export default function Navbar() {
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
 
+  // Close profile dropdown on outside click
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       if (profileRef.current && !profileRef.current.contains(e.target as Node)) {
@@ -107,11 +298,28 @@ export default function Navbar() {
     return () => document.removeEventListener("mousedown", handler);
   }, []);
 
+  // Close desktop search dropdown on outside click
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (
+        desktopSearchWrapRef.current &&
+        !desktopSearchWrapRef.current.contains(e.target as Node)
+      ) {
+        setDesktopDropdownOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  // Close overlays on route change
   useEffect(() => {
     setProfileOpen(false);
     setSearchOpen(false);
+    setDesktopDropdownOpen(false);
   }, [pathname]);
 
+  // Auto-focus mobile search input
   useEffect(() => {
     if (searchOpen) setTimeout(() => searchRef.current?.focus(), 50);
   }, [searchOpen]);
@@ -126,13 +334,23 @@ export default function Navbar() {
     }
   };
 
-  const handleSearch = (e: React.FormEvent) => {
-    e.preventDefault();
+  const commitSearch = () => {
     if (searchQuery.trim()) {
       router.push(`/products?search=${encodeURIComponent(searchQuery.trim())}`);
       setSearchOpen(false);
+      setDesktopDropdownOpen(false);
       setSearchQuery("");
     }
+  };
+
+  const handleSearch = (e: React.FormEvent) => {
+    e.preventDefault();
+    commitSearch();
+  };
+
+  const clearSearch = () => {
+    setSearchQuery("");
+    setDesktopDropdownOpen(false);
   };
 
   const initials = user?.email?.[0]?.toUpperCase() || "U";
@@ -201,21 +419,66 @@ export default function Navbar() {
                 </div>
               </button>
 
-              {/* ── SEARCH BAR ── */}
+              {/* ── DESKTOP SEARCH BAR with live dropdown ── */}
               <div className="flex-1 max-w-xl mx-1 md:mx-2">
-                <form onSubmit={handleSearch} className="hidden md:flex items-center">
-                  <div className="relative w-full">
-                    <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
-                    <input
-                      type="text"
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                      placeholder="Search vegetables, fruits, dairy…"
-                      className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-gray-50 border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-green-400 focus:bg-white transition placeholder:text-gray-400"
-                    />
-                  </div>
-                </form>
+                <div
+                  ref={desktopSearchWrapRef}
+                  className="hidden md:block relative w-full"
+                >
+                  <form onSubmit={handleSearch} className="flex items-center">
+                    <div className="relative w-full">
+                      <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                      <input
+                        ref={desktopSearchRef}
+                        type="text"
+                        value={searchQuery}
+                        onChange={(e) => {
+                          setSearchQuery(e.target.value);
+                          setDesktopDropdownOpen(true);
+                        }}
+                        onFocus={() => { if (searchQuery.trim()) setDesktopDropdownOpen(true); }}
+                        placeholder="Search vegetables, fruits, dairy…"
+                        className="w-full pl-10 pr-8 py-2.5 rounded-xl bg-gray-50 border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-green-400 focus:bg-white transition placeholder:text-gray-400"
+                      />
+                      {searchQuery && (
+                        <button
+                          type="button"
+                          onClick={clearSearch}
+                          className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                        >
+                          <X size={14} />
+                        </button>
+                      )}
+                    </div>
+                  </form>
 
+                  {/* Live dropdown */}
+                  <AnimatePresence>
+                    {desktopDropdownOpen && searchQuery.trim() && (
+                      <motion.div
+                        initial={{ opacity: 0, y: -4 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -4 }}
+                        transition={{ duration: 0.12 }}
+                      >
+                        <SearchDropdown
+                          query={searchQuery}
+                          results={searchResults}
+                          searching={searching}
+                          onSelect={() => {
+                            setDesktopDropdownOpen(false);
+                            setSearchQuery("");
+                          }}
+                          onSeeAll={() => {
+                            commitSearch();
+                          }}
+                        />
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
+
+                {/* Mobile search trigger button */}
                 <button
                   onClick={() => setSearchOpen(true)}
                   className="md:hidden flex items-center gap-2 w-full px-3 py-2 rounded-xl bg-gray-50 border border-gray-200 text-sm text-gray-400 active:bg-gray-100 transition"
@@ -372,6 +635,7 @@ export default function Navbar() {
             exit={{ opacity: 0 }}
             className="fixed inset-0 bg-white z-[60] flex flex-col md:hidden"
           >
+            {/* Search bar */}
             <div className="flex items-center gap-3 px-4 py-3 border-b border-gray-100 shadow-sm">
               <button onClick={() => { setSearchOpen(false); setSearchQuery(""); }} className="p-2 rounded-xl hover:bg-gray-100 transition">
                 <X size={20} className="text-gray-500" />
@@ -393,33 +657,106 @@ export default function Navbar() {
               )}
             </div>
 
-            <div className="px-4 pt-4">
-              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Popular Searches</p>
-              {["Fresh Tomatoes", "Organic Milk", "Alphonso Mangoes", "Brown Rice", "Spinach"].map((q) => (
-                <button
-                  key={q}
-                  onClick={() => { router.push(`/products?search=${encodeURIComponent(q)}`); setSearchOpen(false); setSearchQuery(""); }}
-                  className="flex items-center gap-3 w-full py-2.5 text-sm text-gray-700 border-b border-gray-50 hover:text-green-600 transition"
-                >
-                  <Search size={14} className="text-gray-300 shrink-0" />
-                  {q}
-                </button>
-              ))}
+            {/* Live results in mobile overlay */}
+            {searchQuery.trim() ? (
+              <div className="flex-1 overflow-y-auto px-4 py-3">
+                {searching && (
+                  <div className="flex items-center gap-2 text-sm text-gray-400 py-2">
+                    <span className="inline-block w-3.5 h-3.5 border-2 border-gray-300 border-t-green-500 rounded-full animate-spin" />
+                    Searching…
+                  </div>
+                )}
 
-              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mt-5 mb-3">Browse Categories</p>
-              <div className="grid grid-cols-3 gap-2">
-                {CATEGORY_LINKS.slice(1).map((cat) => (
+                {!searching && searchResults.length === 0 && (
+                  <p className="text-sm text-gray-400 py-2">
+                    No results for <span className="font-semibold text-gray-600">"{searchQuery}"</span>
+                  </p>
+                )}
+
+                {searchResults.length > 0 && (
+                  <>
+                    <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Results</p>
+                    <ul className="space-y-0.5">
+                      {searchResults.map((product) => (
+                        <li key={product.id}>
+                          <Link
+                            href={`/product/${product.id}`}
+                            onClick={() => { setSearchOpen(false); setSearchQuery(""); }}
+                            className="flex items-center gap-3 py-2.5 border-b border-gray-50 hover:text-green-700 transition"
+                          >
+                            <div className="w-10 h-10 rounded-xl overflow-hidden bg-green-50 shrink-0 relative border border-gray-100">
+                              <Image
+                                src={product.image || "https://placehold.co/40x40/e8f5e9/2e7d32?text=🌱"}
+                                alt={product.name}
+                                fill
+                                sizes="40px"
+                                className="object-cover"
+                                onError={(e) => {
+                                  (e.target as HTMLImageElement).src =
+                                    "https://placehold.co/40x40/e8f5e9/2e7d32?text=🌱";
+                                }}
+                              />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-semibold text-gray-800 truncate">{product.name}</p>
+                              <p className="text-xs text-gray-400">
+                                {product.category && (
+                                  <span className="text-green-600 font-medium">{product.category} · </span>
+                                )}
+                                ₹{product.price}
+                              </p>
+                            </div>
+                            <ArrowRight size={14} className="text-gray-300 shrink-0" />
+                          </Link>
+                        </li>
+                      ))}
+                    </ul>
+                    <button
+                      onClick={commitSearch}
+                      className="w-full mt-3 flex items-center justify-center gap-1.5 py-3 rounded-xl bg-green-600 hover:bg-green-700 text-white text-sm font-bold transition"
+                    >
+                      See all results for "{searchQuery}"
+                      <ArrowRight size={14} />
+                    </button>
+                  </>
+                )}
+              </div>
+            ) : (
+              /* Default state: popular + categories */
+              <div className="px-4 pt-4">
+                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+                  <TrendingUp size={11} /> Popular Searches
+                </p>
+                {POPULAR_SEARCHES.map((q) => (
                   <button
-                    key={cat.href}
-                    onClick={() => { router.push(cat.href); setSearchOpen(false); }}
-                    className="flex flex-col items-center gap-1.5 p-3 bg-gray-50 rounded-xl hover:bg-green-50 transition"
+                    key={q}
+                    onClick={() => {
+                      router.push(`/products?search=${encodeURIComponent(q)}`);
+                      setSearchOpen(false);
+                      setSearchQuery("");
+                    }}
+                    className="flex items-center gap-3 w-full py-2.5 text-sm text-gray-700 border-b border-gray-50 hover:text-green-600 transition"
                   >
-                    <span className="text-xl">{cat.emoji}</span>
-                    <span className="text-[10px] font-semibold text-gray-600">{cat.label}</span>
+                    <Search size={14} className="text-gray-300 shrink-0" />
+                    {q}
                   </button>
                 ))}
+
+                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mt-5 mb-3">Browse Categories</p>
+                <div className="grid grid-cols-3 gap-2">
+                  {CATEGORY_LINKS.slice(1).map((cat) => (
+                    <button
+                      key={cat.href}
+                      onClick={() => { router.push(cat.href); setSearchOpen(false); }}
+                      className="flex flex-col items-center gap-1.5 p-3 bg-gray-50 rounded-xl hover:bg-green-50 transition"
+                    >
+                      <span className="text-xl">{cat.emoji}</span>
+                      <span className="text-[10px] font-semibold text-gray-600">{cat.label}</span>
+                    </button>
+                  ))}
+                </div>
               </div>
-            </div>
+            )}
           </motion.div>
         )}
       </AnimatePresence>

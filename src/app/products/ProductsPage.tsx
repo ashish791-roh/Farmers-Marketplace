@@ -10,6 +10,10 @@ import {
   query,
   orderBy,
   where,
+  limit,
+  startAfter,
+  QueryDocumentSnapshot,
+  DocumentData,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useCart } from "@/context/CartContext";
@@ -321,6 +325,9 @@ function FilterDrawer({
   );
 }
 
+// ─── Pagination config ────────────────────────────────────────────────────────
+const PAGE_SIZE = 12; // products per page
+
 // ─── Inner Page (uses useSearchParams) ────────────────────────────────────────
 function ProductsInner() {
   const searchParams = useSearchParams();
@@ -329,6 +336,11 @@ function ProductsInner() {
 
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
+  // cursor holds the last Firestore document snapshot for startAfter()
+  const [cursor, setCursor] = useState<QueryDocumentSnapshot<DocumentData> | null>(null);
+
   const [search, setSearch] = useState("");
   const [selectedCategory, setSelectedCategory] = useState(
     searchParams.get("category")
@@ -341,30 +353,70 @@ function ProductsInner() {
   const [showFilterDrawer, setShowFilterDrawer] = useState(false);
   const [showSortDropdown, setShowSortDropdown] = useState(false);
 
-  // Fetch products
-  useEffect(() => {
-    const fetch = async () => {
-      setLoading(true);
+  // ── Core fetch: loads one page. Pass existingCursor=null for first page. ──
+  const fetchPage = useCallback(
+    async (existingCursor: QueryDocumentSnapshot<DocumentData> | null) => {
       try {
+        // Build the base query — always order by createdAt desc for stable
+        // cursor-based pagination. Client-side sorting handles the rest.
+        const constraints: Parameters<typeof query>[1][] = [
+          orderBy("createdAt", "desc"),
+          limit(PAGE_SIZE),
+        ];
+
+        if (existingCursor) {
+          constraints.push(startAfter(existingCursor));
+        }
+
         const snap = await getDocs(
-          query(collection(db, "products"), orderBy("createdAt", "desc"))
+          query(collection(db, "products"), ...constraints)
         );
-        const data = snap.docs.map((doc) => ({
+
+        const newDocs = snap.docs.map((doc) => ({
           id: doc.id,
           ...doc.data(),
           originalPrice:
             doc.data().originalPrice ??
             Math.round(doc.data().price * (1.1 + Math.random() * 0.3)),
         })) as Product[];
-        setProducts(data);
+
+        setProducts((prev) =>
+          existingCursor ? [...prev, ...newDocs] : newDocs
+        );
+
+        // If we got fewer docs than PAGE_SIZE, there are no more pages
+        setHasMore(snap.docs.length === PAGE_SIZE);
+
+        // Save the last doc as the next cursor
+        const lastDoc = snap.docs[snap.docs.length - 1] ?? null;
+        setCursor(lastDoc);
       } catch (err) {
-        console.error(err);
-      } finally {
-        setLoading(false);
+        console.error("Products fetch error:", err);
       }
+    },
+    []
+  );
+
+  // Initial load
+  useEffect(() => {
+    const init = async () => {
+      setLoading(true);
+      setCursor(null);
+      setHasMore(true);
+      setProducts([]);
+      await fetchPage(null);
+      setLoading(false);
     };
-    fetch();
-  }, []);
+    init();
+  }, [fetchPage]);
+
+  // Load more handler (called by "Load More" button)
+  const handleLoadMore = async () => {
+    if (loadingMore || !hasMore) return;
+    setLoadingMore(true);
+    await fetchPage(cursor);
+    setLoadingMore(false);
+  };
 
   // Cart helper — maps Product to CartItem (adds required quantity field)
   const handleAddToCart = (product: Product) => {
@@ -528,7 +580,9 @@ function ProductsInner() {
       {/* Results count */}
       <div className="px-4 py-2 flex items-center justify-between">
         <p className="text-xs text-gray-500">
-          {loading ? "Loading..." : `${filtered.length} products found`}
+          {loading
+            ? "Loading..."
+            : `${filtered.length} products${hasMore ? "+" : ""} found`}
         </p>
         {(search || selectedCategory !== "All" || priceRange[1] < 1000) && (
           <button
@@ -544,7 +598,7 @@ function ProductsInner() {
       <div className="px-3 md:px-6 max-w-5xl mx-auto">
         {loading ? (
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-            {Array.from({ length: 8 }).map((_, i) => (
+            {Array.from({ length: PAGE_SIZE }).map((_, i) => (
               <ProductSkeleton key={i} />
             ))}
           </div>
@@ -554,14 +608,10 @@ function ProductsInner() {
             <div className="relative mb-8">
               <svg width="180" height="160" viewBox="0 0 180 160" fill="none" xmlns="http://www.w3.org/2000/svg">
                 <circle cx="90" cy="82" r="68" fill="#f0fdf4"/>
-                {/* Magnifying glass */}
                 <circle cx="82" cy="74" r="30" fill="white" stroke="#86efac" strokeWidth="3"/>
                 <circle cx="82" cy="74" r="22" fill="#dcfce7"/>
-                {/* Question mark inside */}
                 <text x="82" y="82" textAnchor="middle" fontSize="22" fill="#34d399" fontWeight="bold">?</text>
-                {/* Handle */}
                 <line x1="105" y1="97" x2="122" y2="114" stroke="#86efac" strokeWidth="5" strokeLinecap="round"/>
-                {/* Sparkles */}
                 <circle cx="38" cy="55" r="3" fill="#fde68a"/>
                 <circle cx="145" cy="50" r="2.5" fill="#fca5a5"/>
                 <circle cx="36" cy="105" r="2" fill="#86efac"/>
@@ -590,17 +640,55 @@ function ProductsInner() {
             </div>
           </div>
         ) : (
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-            {filtered.map((product) => (
-              <ProductCard
-                key={product.id}
-                product={product}
-                onAddToCart={handleAddToCart}
-                wishlisted={isWishlisted(product.id)}
-                onWishlist={handleWishlist}
-              />
-            ))}
-          </div>
+          <>
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+              {filtered.map((product) => (
+                <ProductCard
+                  key={product.id}
+                  product={product}
+                  onAddToCart={handleAddToCart}
+                  wishlisted={isWishlisted(product.id)}
+                  onWishlist={handleWishlist}
+                />
+              ))}
+            </div>
+
+            {/* ── Load More ── */}
+            {hasMore && (
+              <div className="flex justify-center mt-6 mb-2">
+                <button
+                  onClick={handleLoadMore}
+                  disabled={loadingMore}
+                  className="flex items-center gap-2 px-8 py-3 bg-white border border-green-600 text-green-700 font-bold text-sm rounded-2xl hover:bg-green-50 transition-all active:scale-95 disabled:opacity-60 shadow-sm"
+                >
+                  {loadingMore ? (
+                    <>
+                      <span className="inline-block w-4 h-4 border-2 border-green-300 border-t-green-600 rounded-full animate-spin" />
+                      Loading more...
+                    </>
+                  ) : (
+                    <>Load more products</>
+                  )}
+                </button>
+              </div>
+            )}
+
+            {/* ── End of results ── */}
+            {!hasMore && products.length > PAGE_SIZE && (
+              <p className="text-center text-xs text-gray-400 mt-6 mb-2">
+                You've seen all {products.length} products 🌱
+              </p>
+            )}
+
+            {/* Loading more skeletons */}
+            {loadingMore && (
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 mt-3">
+                {Array.from({ length: 4 }).map((_, i) => (
+                  <ProductSkeleton key={`more-${i}`} />
+                ))}
+              </div>
+            )}
+          </>
         )}
       </div>
 

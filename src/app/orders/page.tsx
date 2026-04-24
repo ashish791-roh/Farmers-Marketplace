@@ -5,6 +5,10 @@ import Image from "next/image";
 import { useEffect, useState } from "react";
 import { db } from "@/lib/firebase";
 import { useAuth } from "@/context/AuthContext";
+
+// Cancellation time window — must match the server-side constant
+const CANCEL_WINDOW_MS = 30 * 60 * 1000; // 30 minutes
+const CANCELLABLE_STATUSES = ["pending", "paid", "confirmed", "processing"];
 import {
   collection,
   query,
@@ -30,6 +34,8 @@ import {
   MapPin,
   Circle,
   BadgeCheck,
+  XCircle,
+  AlertTriangle,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -275,10 +281,106 @@ function DeliveryTimeline({
   );
 }
 
+// ─── Cancel Confirmation Dialog ───────────────────────────────────────────────
+function CancelDialog({
+  onConfirm,
+  onClose,
+  loading,
+}: {
+  onConfirm: () => void;
+  onClose: () => void;
+  loading: boolean;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
+      {/* Backdrop */}
+      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
+      {/* Dialog */}
+      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 animate-in fade-in zoom-in-95 duration-200">
+        <div className="flex flex-col items-center text-center gap-3">
+          <div className="w-14 h-14 rounded-full bg-red-50 flex items-center justify-center mb-1">
+            <AlertTriangle size={26} className="text-red-500" />
+          </div>
+          <h3 className="text-lg font-extrabold text-gray-900">Cancel this order?</h3>
+          <p className="text-sm text-gray-500 leading-relaxed">
+            This action cannot be undone. Any payment made will be refunded within{" "}
+            <span className="font-semibold text-gray-700">5–7 business days</span>.
+          </p>
+        </div>
+        <div className="flex gap-3 mt-6">
+          <button
+            onClick={onClose}
+            disabled={loading}
+            className="flex-1 py-3 rounded-xl border border-gray-200 text-sm font-bold text-gray-600 hover:bg-gray-50 transition-colors disabled:opacity-50"
+          >
+            Keep Order
+          </button>
+          <button
+            onClick={onConfirm}
+            disabled={loading}
+            className="flex-1 py-3 rounded-xl bg-red-500 hover:bg-red-600 text-white text-sm font-bold transition-colors disabled:opacity-60 flex items-center justify-center gap-2"
+          >
+            {loading ? (
+              <span className="inline-block w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+            ) : (
+              <XCircle size={15} />
+            )}
+            {loading ? "Cancelling..." : "Yes, Cancel"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Order Card ───────────────────────────────────────────────────────────────
-function OrderCard({ order }: { order: Order }) {
+function OrderCard({ order, onCancelled }: { order: Order; onCancelled: (id: string) => void }) {
   const [expanded, setExpanded] = useState(false);
+  const [showCancelDialog, setShowCancelDialog] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
+  const [cancelError, setCancelError] = useState<string | null>(null);
+  const { user } = useAuth();
   const currentStep = STATUS_TO_STEP[order.status] ?? 0;
+
+  // Compute whether the cancel button should be shown
+  const isCancellable = (() => {
+    if (!CANCELLABLE_STATUSES.includes(order.status)) return false;
+    const createdSec: number = order.createdAt?.seconds ?? 0;
+    return Date.now() - createdSec * 1000 <= CANCEL_WINDOW_MS;
+  })();
+
+  // How many minutes remain in the window (for display)
+  const minutesLeft = (() => {
+    const createdSec: number = order.createdAt?.seconds ?? 0;
+    const remaining = CANCEL_WINDOW_MS - (Date.now() - createdSec * 1000);
+    return Math.max(0, Math.ceil(remaining / 60000));
+  })();
+
+  const handleCancelConfirm = async () => {
+    if (!user) return;
+    setCancelling(true);
+    setCancelError(null);
+    try {
+      const res = await fetch("/api/orders/cancel", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orderId: order.id, userId: user.uid }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setShowCancelDialog(false);
+        onCancelled(order.id);
+      } else {
+        setCancelError(data.message ?? "Could not cancel. Please try again.");
+        setShowCancelDialog(false);
+      }
+    } catch {
+      setCancelError("Network error. Please try again.");
+      setShowCancelDialog(false);
+    } finally {
+      setCancelling(false);
+    }
+  };
 
   const dateStr = order.createdAt?.seconds
     ? new Date(order.createdAt.seconds * 1000).toLocaleDateString("en-IN", {
@@ -299,6 +401,14 @@ function OrderCard({ order }: { order: Order }) {
   const extraCount = itemCount - 1;
 
   return (
+    <>
+      {showCancelDialog && (
+        <CancelDialog
+          onConfirm={handleCancelConfirm}
+          onClose={() => setShowCancelDialog(false)}
+          loading={cancelling}
+        />
+      )}
     <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden hover:shadow-md transition-shadow duration-200">
       {/* ── Card Header ── */}
       <div className="px-4 pt-4 pb-3">
@@ -454,20 +564,34 @@ function OrderCard({ order }: { order: Order }) {
                 </div>
               )}
 
+              {/* Cancel error */}
+              {cancelError && (
+                <div className="mt-3 flex items-center gap-2 bg-red-50 border border-red-100 rounded-xl px-3 py-2.5">
+                  <XCircle size={14} className="text-red-400 shrink-0" />
+                  <p className="text-xs text-red-600 font-medium">{cancelError}</p>
+                </div>
+              )}
+
               {/* Actions */}
-              <div className="mt-3 flex gap-2">
+              <div className="mt-3 flex gap-2 flex-wrap">
                 {order.status === "delivered" && (
                   <button className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl border border-green-600 text-green-600 text-xs font-bold hover:bg-green-50 transition-colors">
                     <Star size={13} />
                     Rate & Review
                   </button>
                 )}
-                {(order.status === "pending" || order.status === "confirmed") && (
-                  <button className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl border border-red-300 text-red-500 text-xs font-bold hover:bg-red-50 transition-colors">
-                    <RotateCcw size={13} />
+
+                {/* Cancel button — shown only within the time window */}
+                {isCancellable && (
+                  <button
+                    onClick={() => { setCancelError(null); setShowCancelDialog(true); }}
+                    className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl border border-red-300 text-red-500 text-xs font-bold hover:bg-red-50 transition-colors"
+                  >
+                    <XCircle size={13} />
                     Cancel Order
                   </button>
                 )}
+
                 <Link
                   href="/products"
                   className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-green-600 hover:bg-green-700 text-white text-xs font-bold transition-colors"
@@ -476,11 +600,19 @@ function OrderCard({ order }: { order: Order }) {
                   Reorder
                 </Link>
               </div>
+
+              {/* Time-window hint for cancellable orders */}
+              {isCancellable && (
+                <p className="text-[10px] text-amber-600 mt-2 text-center font-medium">
+                  ⏱ You can cancel this order for the next {minutesLeft} minute{minutesLeft !== 1 ? "s" : ""}
+                </p>
+              )}
             </div>
           </motion.div>
         )}
       </AnimatePresence>
     </div>
+    </>
   );
 }
 
@@ -535,6 +667,13 @@ export default function OrdersPage() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeFilter, setActiveFilter] = useState("all");
+
+  // Optimistically update the cancelled order's status in local state
+  const handleOrderCancelled = (orderId: string) => {
+    setOrders((prev) =>
+      prev.map((o) => (o.id === orderId ? { ...o, status: "cancelled" } : o))
+    );
+  };
 
   useEffect(() => {
     if (!user) { setLoading(false); return; }
@@ -727,7 +866,7 @@ export default function OrdersPage() {
           {!loading && filtered.length > 0 && (
             <div className="space-y-4">
               {filtered.map((order) => (
-                <OrderCard key={order.id} order={order} />
+                <OrderCard key={order.id} order={order} onCancelled={handleOrderCancelled} />
               ))}
             </div>
           )}
