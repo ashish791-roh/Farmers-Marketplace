@@ -1,42 +1,53 @@
+import crypto from "crypto";
 import Razorpay from "razorpay";
 import { NextResponse } from "next/server";
 
 export async function POST(req: Request) {
   try {
-    const { amount } = await req.json();
+    const {
+      razorpay_order_id,
+      razorpay_payment_id,
+      razorpay_signature,
+    } = await req.json();
 
-    if (!amount || amount <= 0) {
+    // Validate required fields
+    if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
       return NextResponse.json(
-        { error: "Valid amount is required" },
+        { error: "Missing required payment fields" },
         { status: 400 }
       );
     }
 
-    /*
-      FIX: In Next.js API routes (server-side), NEXT_PUBLIC_ variables are
-      NOT available via process.env — they are only inlined into client
-      bundles at build time. Using NEXT_PUBLIC_RAZORPAY_KEY_ID here always
-      evaluates to undefined at runtime, triggering "Razorpay configuration
-      missing" on every request (especially noticeable on mobile).
-
-      Use RAZORPAY_KEY_ID (no NEXT_PUBLIC_ prefix) as a plain server-side
-      env var in API routes. Keep NEXT_PUBLIC_RAZORPAY_KEY_ID only in the
-      client-side checkout page where it is needed.
-
-      In your .env.local you need both:
-        RAZORPAY_KEY_ID=rzp_test_xxxxxxxxxx        ← for API routes
-        RAZORPAY_KEY_SECRET=xxxxxxxxxx             ← for API routes
-        NEXT_PUBLIC_RAZORPAY_KEY_ID=rzp_test_xxxx  ← for checkout page (client)
-    */
-    const keyId = process.env.RAZORPAY_KEY_ID;
     const keySecret = process.env.RAZORPAY_KEY_SECRET;
-
-    if (!keyId || !keySecret) {
-      console.error(
-        "Missing env vars — set RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET in .env.local"
-      );
+    if (!keySecret) {
+      console.error("Missing RAZORPAY_KEY_SECRET in environment");
       return NextResponse.json(
-        { error: "Razorpay configuration missing" },
+        { error: "Server configuration error" },
+        { status: 500 }
+      );
+    }
+
+    // Verify signature using HMAC-SHA256
+    const body = `${razorpay_order_id}|${razorpay_payment_id}`;
+    const expectedSignature = crypto
+      .createHmac("sha256", keySecret)
+      .update(body)
+      .digest("hex");
+
+    if (expectedSignature !== razorpay_signature) {
+      console.error("Payment signature mismatch - possible fraud attempt");
+      return NextResponse.json(
+        { error: "Payment verification failed - signature mismatch" },
+        { status: 400 }
+      );
+    }
+
+    // Optionally verify payment status with Razorpay API
+    const keyId = process.env.RAZORPAY_KEY_ID;
+    if (!keyId) {
+      console.error("Missing RAZORPAY_KEY_ID in environment");
+      return NextResponse.json(
+        { error: "Server configuration error" },
         { status: 500 }
       );
     }
@@ -46,22 +57,38 @@ export async function POST(req: Request) {
       key_secret: keySecret,
     });
 
-    const order = await razorpay.orders.create({
-      amount: Math.round(amount * 100), // ₹ → paise
-      currency: "INR",
-      receipt: `receipt_${Date.now()}`,
-    });
+    try {
+      const paymentDetails = await razorpay.payments.fetch(razorpay_payment_id);
 
-    return NextResponse.json({
-      id: order.id,
-      amount: order.amount,
-      currency: order.currency,
-    });
-  } catch (error) {
-    console.error("Order creation error:", error);
+      if (paymentDetails.status !== "captured") {
+        console.error(
+          `Payment status is ${paymentDetails.status}, expected 'captured'`
+        );
+        return NextResponse.json(
+          { error: "Payment not captured yet" },
+          { status: 400 }
+        );
+      }
+    } catch (apiError) {
+      console.error("Error fetching payment details from Razorpay:", apiError);
+      // Even if API call fails, if signature is valid, we trust it
+      // This prevents false negatives in case of temporary API issues
+    }
+
     return NextResponse.json(
       {
-        error: "Failed to create payment order",
+        success: true,
+        message: "Payment verified successfully",
+        razorpay_order_id,
+        razorpay_payment_id,
+      },
+      { status: 200 }
+    );
+  } catch (error) {
+    console.error("Payment verification error:", error);
+    return NextResponse.json(
+      {
+        error: "Payment verification failed",
         details: error instanceof Error ? error.message : "Unknown error",
       },
       { status: 500 }
