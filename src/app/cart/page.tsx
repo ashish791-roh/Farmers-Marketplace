@@ -77,7 +77,13 @@ type CouponResult = {
 
 type AvailableCoupon = { code: string; description: string };
 
-function CouponSection({ orderTotal }: { orderTotal: number }) {
+function CouponSection({
+  orderTotal,
+  onCouponChange,
+}: {
+  orderTotal: number;
+  onCouponChange: (discount: number) => void;
+}) {
   const [couponInput, setCouponInput] = useState("");
   const [applied, setApplied] = useState<CouponResult | null>(null);
   const [open, setOpen] = useState(false);
@@ -112,9 +118,11 @@ function CouponSection({ orderTotal }: { orderTotal: number }) {
         setApplied(data);
         setOpen(false);
         setCouponInput("");
+        onCouponChange(data.discountAmount ?? 0);
       } else {
         setApplied(null);
         setError(data.message);
+        onCouponChange(0);
       }
     } catch {
       setError("Could not validate coupon. Please try again.");
@@ -127,6 +135,7 @@ function CouponSection({ orderTotal }: { orderTotal: number }) {
     setApplied(null);
     setError(null);
     setCouponInput("");
+    onCouponChange(0);
   };
 
   return (
@@ -357,17 +366,19 @@ function CartItem({
 }
 
 // ── Price Breakdown ────────────────────────────────────────────────────────────
-function PriceBreakdown({ cart }: { cart: any[] }) {
+function PriceBreakdown({ cart, couponDiscount = 0 }: { cart: any[]; couponDiscount?: number }) {
   const subtotal = cart.reduce(
     (sum, item) => sum + (item.originalPrice ?? Math.round(item.price * 1.2)) * item.quantity,
     0
   );
-  const discount = cart.reduce((sum, item) => {
+  const itemDiscount = cart.reduce((sum, item) => {
     const original = item.originalPrice ?? Math.round(item.price * 1.2);
     return sum + (original - item.price) * item.quantity;
   }, 0);
-  const delivery = subtotal - discount > 499 ? 0 : 49;
-  const total = subtotal - discount + delivery;
+  const priceAfterItemDiscount = subtotal - itemDiscount;
+  const delivery = priceAfterItemDiscount > 499 ? 0 : 49;
+  const total = priceAfterItemDiscount - couponDiscount + delivery;
+  const totalSavings = itemDiscount + couponDiscount;
 
   return (
     <div className="space-y-3">
@@ -384,14 +395,24 @@ function PriceBreakdown({ cart }: { cart: any[] }) {
           },
           {
             label: "Discount",
-            value: `−₹${Math.round(discount)}`,
+            value: `−₹${Math.round(itemDiscount)}`,
             valueClass: "text-green-600 font-semibold",
           },
+          ...(couponDiscount > 0
+            ? [
+                {
+                  label: "Coupon Discount",
+                  value: `−₹${Math.round(couponDiscount)}`,
+                  valueClass: "text-orange-500 font-semibold",
+                  sub: undefined,
+                },
+              ]
+            : []),
           {
             label: "Delivery Charges",
             value: delivery === 0 ? "FREE" : `₹${delivery}`,
             valueClass: delivery === 0 ? "text-green-600 font-semibold" : "text-gray-700",
-            sub: delivery === 0 ? "🎉 Free delivery applied" : "Add ₹" + (499 - (subtotal - discount)) + " more for free delivery",
+            sub: delivery === 0 ? "🎉 Free delivery applied" : "Add ₹" + (499 - priceAfterItemDiscount) + " more for free delivery",
           },
         ].map((row) => (
           <div key={row.label} className="flex items-start justify-between">
@@ -408,13 +429,13 @@ function PriceBreakdown({ cart }: { cart: any[] }) {
 
       <div className="border-t border-dashed border-gray-200 pt-3 flex items-center justify-between">
         <span className="font-bold text-gray-900">Total Amount</span>
-        <span className="text-lg font-extrabold text-gray-900">₹{Math.round(total)}</span>
+        <span className="text-lg font-extrabold text-gray-900">₹{Math.round(Math.max(0, total))}</span>
       </div>
 
-      {discount > 0 && (
+      {totalSavings > 0 && (
         <div className="bg-green-50 rounded-xl px-3 py-2.5 text-center">
           <span className="text-green-700 text-sm font-semibold">
-            You will save ₹{Math.round(discount)} on this order
+            You will save ₹{Math.round(totalSavings)} on this order
           </span>
         </div>
       )}
@@ -454,6 +475,7 @@ function EmptyCart() {
 export default function CartPage() {
   const { cart, removeFromCart, updateQty } = useCart();
   const [loading, setLoading] = useState(true);
+  const [couponDiscount, setCouponDiscount] = useState(0);
   const router = useRouter();
 
   useEffect(() => {
@@ -565,13 +587,13 @@ export default function CartPage() {
                 <SavingsPill amount={Math.round(totalSavings)} />
 
                 {/* Coupon */}
-                <CouponSection orderTotal={total} />
+                <CouponSection orderTotal={total} onCouponChange={setCouponDiscount} />
               </div>
 
               {/* ── Right column: Price summary (desktop) ── */}
               <div className="hidden md:block w-80 shrink-0 sticky top-24 space-y-3">
                 <div className="bg-white rounded-2xl border border-gray-100 p-5">
-                  <PriceBreakdown cart={cart} />
+                  <PriceBreakdown cart={cart} couponDiscount={couponDiscount} />
                 </div>
 
                 <button
@@ -599,16 +621,19 @@ export default function CartPage() {
           <div className="px-4 pt-3 pb-1 flex items-center justify-between">
             <div>
               <p className="text-xs text-gray-500">
-                {cart.reduce((s, i) => s + i.quantity, 0)} items · Subtotal
+                {cart.reduce((s, i) => s + i.quantity, 0)} items · Total
               </p>
               <p className="text-lg font-extrabold text-gray-900">
-                ₹{cart.reduce((sum, item) => sum + item.price * item.quantity, 0)}
+                ₹{Math.max(0, Math.round(cart.reduce((sum, item) => sum + item.price * item.quantity, 0) - couponDiscount))}
               </p>
+              {couponDiscount > 0 && (
+                <p className="text-[10px] text-orange-500 font-semibold">Coupon −₹{couponDiscount} applied</p>
+              )}
             </div>
-            {totalSavings > 0 && (
+            {(totalSavings > 0 || couponDiscount > 0) && (
               <div className="bg-green-50 px-2.5 py-1 rounded-lg">
                 <p className="text-green-600 text-xs font-bold">
-                  Save ₹{Math.round(totalSavings)}
+                  Save ₹{Math.round(totalSavings + couponDiscount)}
                 </p>
               </div>
             )}

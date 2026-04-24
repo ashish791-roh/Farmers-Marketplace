@@ -388,7 +388,6 @@ export default function Navbar() {
 
         {/* ── MAIN NAVBAR ── */}
         <nav className="bg-white border-b border-gray-100">
-          <div className="hidden md:block h-[3px] bg-gradient-to-r from-green-500 via-emerald-400 to-green-600" />
 
           <div className="max-w-7xl mx-auto px-3 md:px-6">
             <div className="flex items-center gap-2 md:gap-4 h-14 md:h-16">
