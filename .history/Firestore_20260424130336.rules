@@ -1,0 +1,106 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ─── Helper Functions ────────────────────────────────────────────────────
+
+    // Returns true if the request is from a signed-in user
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // Returns true if the signed-in user owns the document (uid matches doc id)
+    function isOwner(uid) {
+      return isAuthenticated() && request.auth.uid == uid;
+    }
+
+    // Returns true if the signed-in user has role == "admin"
+    function isAdmin() {
+      return isAuthenticated() &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == "admin";
+    }
+
+    // Returns true if the signed-in user has role == "farmer"
+    function isFarmer() {
+      return isAuthenticated() &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == "farmer";
+    }
+
+    // Returns true if the signed-in user is either admin or farmer
+    function isAdminOrFarmer() {
+      return isAdmin() || isFarmer();
+    }
+
+
+    // ─── /users/{userId} ─────────────────────────────────────────────────────
+    match /users/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
+      allow create: if isOwner(userId);
+      allow update: if isOwner(userId) && !request.resource.data.diff(resource.data).affectedKeys().hasAny(["role"])
+                    || isAdmin();
+      allow delete: if isAdmin();
+    }
+
+
+    // ─── /products/{productId} ───────────────────────────────────────────────
+    match /products/{productId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+
+    // ─── /pendingProducts/{productId} ────────────────────────────────────────
+    match /pendingProducts/{productId} {
+      allow read:   if isAdmin() || (isFarmer() && resource.data.farmerId == request.auth.uid);
+      allow create: if isFarmer() && request.resource.data.farmerId == request.auth.uid;
+      allow update: if isAdmin()
+                    || (isFarmer() && resource.data.farmerId == request.auth.uid);
+      allow delete: if isAdmin();
+    }
+
+
+    // ─── /orders/{orderId} ───────────────────────────────────────────────────
+    match /orders/{orderId} {
+      allow read:   if isAdmin()
+                    || (isAuthenticated() && resource.data.userId == request.auth.uid)
+                    || (isFarmer() && resource.data.farmerId == request.auth.uid);
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+      allow update: if isAdmin()
+                    || (isAuthenticated() && resource.data.userId == request.auth.uid
+                        && request.resource.data.diff(resource.data).affectedKeys()
+                           .hasOnly(["status", "updatedAt"]));
+      allow delete: if isAdmin();
+    }
+
+
+    // ─── /carts/{userId} ─────────────────────────────────────────────────────
+    match /carts/{userId} {
+      allow read, write: if isOwner(userId);
+    }
+
+
+    // ─── /wishlists/{userId} ─────────────────────────────────────────────────
+    match /wishlists/{userId} {
+      allow read, write: if isOwner(userId);
+    }
+
+
+    // ─── /adminNotifications/{notificationId} ────────────────────────────────
+    match /adminNotifications/{notificationId} {
+      allow read, write: if isAdmin();
+    }
+
+
+    // ─── /farmerNotifications/{notificationId} ───────────────────────────────
+    match /farmerNotifications/{notificationId} {
+      allow read:   if isAdmin()
+                    || (isFarmer() && resource.data.farmerId == request.auth.uid);
+      allow create: if isAdmin();
+      allow update: if isAdmin()
+                    || (isFarmer() && resource.data.farmerId == request.auth.uid);
+      allow delete: if isAdmin();
+    }
+
+  }
+}
