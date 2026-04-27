@@ -1,20 +1,13 @@
 "use client";
 
-import { useEffect, useRef, useState, lazy, Suspense } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  MapPin,
-  X,
-  Search,
-  Navigation,
-  ChevronRight,
-  Loader2,
-  CheckCircle2,
+  MapPin, X, Search, Navigation, Loader2, CheckCircle2,
+  Clock, Building2, Home, ChevronRight, Star, Utensils,
+  ShoppingBag, Hospital, GraduationCap, Train, Landmark,
 } from "lucide-react";
 import toast from "react-hot-toast";
-
-// Lazy load the map component to avoid SSR issues with Leaflet
-const IndiaMapSelector = lazy(() => import("@/components/IndiaMapSelector"));
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 export type LocationInfo = {
@@ -22,26 +15,61 @@ export type LocationInfo = {
   pincode?: string;
   state?: string;
   district?: string;
+  fullAddress?: string;
+  area?: string;
+  lat?: string;
+  lon?: string;
 };
 
-// ── Popular cities with pincodes ───────────────────────────────────────────────
-const POPULAR_CITIES: LocationInfo[] = [
-  { city: "New Delhi", pincode: "110001", state: "Delhi", district: "New Delhi" },
-  { city: "Mumbai", pincode: "400001", state: "Maharashtra", district: "Mumbai City" },
-  { city: "Bangalore", pincode: "560001", state: "Karnataka", district: "Bengaluru Urban" },
-  { city: "Chennai", pincode: "600001", state: "Tamil Nadu", district: "Chennai" },
-  { city: "Hyderabad", pincode: "500001", state: "Telangana", district: "Hyderabad" },
-  { city: "Kolkata", pincode: "700001", state: "West Bengal", district: "Kolkata" },
-  { city: "Pune", pincode: "411001", state: "Maharashtra", district: "Pune" },
-  { city: "Ahmedabad", pincode: "380001", state: "Gujarat", district: "Ahmedabad" },
-  { city: "Jaipur", pincode: "302001", state: "Rajasthan", district: "Jaipur" },
-  { city: "Lucknow", pincode: "226001", state: "Uttar Pradesh", district: "Lucknow" },
-  { city: "Chandigarh", pincode: "160001", state: "Chandigarh", district: "Chandigarh" },
-  { city: "Indore", pincode: "452001", state: "Madhya Pradesh", district: "Indore" },
-];
+type NominatimResult = {
+  place_id: number;
+  display_name: string;
+  lat: string;
+  lon: string;
+  type: string;
+  class: string;
+  importance: number;
+  namedetails?: { name?: string; "name:en"?: string };
+  extratags?: { amenity?: string; cuisine?: string; brand?: string };
+  address: {
+    house_number?: string;
+    house_name?: string;
+    road?: string;
+    pedestrian?: string;
+    path?: string;
+    footway?: string;
+    service?: string;
+    suburb?: string;
+    neighbourhood?: string;
+    quarter?: string;
+    city_block?: string;
+    city?: string;
+    town?: string;
+    village?: string;
+    hamlet?: string;
+    county?: string;
+    state_district?: string;
+    state?: string;
+    postcode?: string;
+    country?: string;
+    amenity?: string;
+    building?: string;
+    office?: string;
+    shop?: string;
+    tourism?: string;
+    leisure?: string;
+    railway?: string;
+    aeroway?: string;
+    healthcare?: string;
+    school?: string;
+    university?: string;
+    college?: string;
+  };
+};
 
-// ── Local storage key ─────────────────────────────────────────────────────────
+// ── Storage ───────────────────────────────────────────────────────────────────
 const LOCATION_KEY = "farmx_delivery_location";
+const RECENTS_KEY  = "farmx_recent_locations";
 
 export function getStoredLocation(): LocationInfo {
   if (typeof window === "undefined") return { city: "New Delhi", pincode: "110001" };
@@ -55,10 +83,123 @@ export function getStoredLocation(): LocationInfo {
 export function storeLocation(loc: LocationInfo) {
   try {
     localStorage.setItem(LOCATION_KEY, JSON.stringify(loc));
+    const existing: LocationInfo[] = JSON.parse(localStorage.getItem(RECENTS_KEY) || "[]");
+    const deduped = existing
+      .filter((r) => r.fullAddress !== loc.fullAddress)
+      .slice(0, 4);
+    localStorage.setItem(RECENTS_KEY, JSON.stringify([loc, ...deduped]));
   } catch {}
 }
 
-// ── Main Modal ────────────────────────────────────────────────────────────────
+function getRecentLocations(): LocationInfo[] {
+  try { return JSON.parse(localStorage.getItem(RECENTS_KEY) || "[]"); }
+  catch { return []; }
+}
+
+// ── Parse a Nominatim result into LocationInfo ────────────────────────────────
+function parseResult(r: NominatimResult): LocationInfo {
+  const a = r.address;
+
+  const houseNo   = a.house_number || a.house_name || "";
+  const road      = a.road || a.pedestrian || a.path || a.footway || a.service || "";
+  const area      = a.suburb || a.neighbourhood || a.quarter || a.city_block || "";
+  const city      = a.city || a.town || a.village || a.hamlet || a.county || "";
+  const state     = a.state || "";
+  const pincode   = a.postcode || "";
+
+  // Landmark / place name (most precise identifier)
+  const placeName =
+    a.amenity || a.building || a.office || a.shop ||
+    a.tourism || a.leisure || a.railway || a.healthcare ||
+    a.school || a.university || a.college || a.aeroway || "";
+
+  // Build full address from most specific → least specific
+  const parts = [placeName, houseNo ? `${houseNo}, ${road}` : road, area, city, state]
+    .map((p) => p.trim())
+    .filter(Boolean);
+
+  const fullAddress = parts.join(", ");
+
+  // Short display label for navbar
+  const displayCity = placeName || (houseNo ? `${houseNo}, ${road}` : road) || area || city || "Your Location";
+
+  return {
+    city: displayCity,
+    area: area || city,
+    fullAddress,
+    pincode,
+    state,
+    district: a.state_district || a.county || city,
+    lat: r.lat,
+    lon: r.lon,
+  };
+}
+
+// ── Smart address display: primary + secondary lines ─────────────────────────
+function formatDisplayName(r: NominatimResult): { primary: string; secondary: string } {
+  const a = r.address;
+
+  const placeName =
+    a.amenity || a.building || a.office || a.shop ||
+    a.tourism || a.leisure || a.railway || a.healthcare ||
+    a.school || a.university || a.college || "";
+
+  const houseNo = a.house_number || a.house_name || "";
+  const road    = a.road || a.pedestrian || a.path || a.footway || "";
+  const area    = a.suburb || a.neighbourhood || a.quarter || "";
+  const city    = a.city || a.town || a.village || a.county || "";
+  const state   = a.state || "";
+  const pin     = a.postcode || "";
+
+  let primary = "";
+  let secondary = "";
+
+  if (placeName) {
+    primary   = placeName;
+    const roadPart = houseNo ? `${houseNo}, ${road}` : road;
+    secondary = [roadPart, area, city].filter(Boolean).join(", ");
+  } else if (houseNo && road) {
+    primary   = `${houseNo}, ${road}`;
+    secondary = [area, city, state, pin].filter(Boolean).join(", ");
+  } else if (road) {
+    primary   = road;
+    secondary = [area, city, state, pin].filter(Boolean).join(", ");
+  } else if (area) {
+    primary   = area;
+    secondary = [city, state, pin].filter(Boolean).join(", ");
+  } else {
+    const parts = r.display_name.split(", ");
+    primary   = parts.slice(0, 2).join(", ");
+    secondary = parts.slice(2, 5).join(", ");
+  }
+
+  return { primary, secondary };
+}
+
+// ── Place icon based on OSM class/type ───────────────────────────────────────
+function PlaceIcon({ r }: { r: NominatimResult }) {
+  const a = r.address;
+  const cls = r.class;
+  const type = r.type;
+
+  if (a.railway || type === "station" || type === "halt") return <Train size={13} className="text-purple-500" />;
+  if (a.healthcare || type === "hospital" || type === "clinic" || type === "pharmacy")
+    return <Hospital size={13} className="text-red-500" />;
+  if (a.school || a.university || a.college || type === "school" || type === "university")
+    return <GraduationCap size={13} className="text-yellow-600" />;
+  if (a.shop || cls === "shop") return <ShoppingBag size={13} className="text-pink-500" />;
+  if (type === "restaurant" || type === "cafe" || type === "fast_food" || type === "food_court")
+    return <Utensils size={13} className="text-orange-500" />;
+  if (cls === "office" || a.office || type === "government" || type === "company")
+    return <Building2 size={13} className="text-blue-500" />;
+  if (cls === "tourism" || a.tourism || type === "monument" || type === "temple" || type === "mosque" || type === "church")
+    return <Landmark size={13} className="text-amber-500" />;
+  if (cls === "building" || type === "house" || type === "residential" || type === "apartments")
+    return <Home size={13} className="text-orange-400" />;
+  return <MapPin size={13} className="text-green-500" />;
+}
+
+// ── Main component ────────────────────────────────────────────────────────────
 interface LocationModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -66,129 +207,165 @@ interface LocationModalProps {
   onLocationChange: (loc: LocationInfo) => void;
 }
 
+// India bounding box for viewbox bias (improves India-specific results)
+const INDIA_VIEWBOX = "68.1766451354,7.96553477623,97.4025614766,35.4940095078";
+
 export default function LocationModal({
-  isOpen,
-  onClose,
-  currentLocation,
-  onLocationChange,
+  isOpen, onClose, currentLocation, onLocationChange,
 }: LocationModalProps) {
-  const [query, setQuery] = useState("");
-  const [detecting, setDetecting] = useState(false);
-  const [detected, setDetected] = useState(false);
-  const [pincodeInput, setPincodeInput] = useState("");
-  const [pincodeError, setPincodeError] = useState("");
-  const [tab, setTab] = useState<"city" | "pincode" | "map">("city");
+  const [query, setQuery]               = useState("");
+  const [results, setResults]           = useState<NominatimResult[]>([]);
+  const [searching, setSearching]       = useState(false);
+  const [detecting, setDetecting]       = useState(false);
+  const [detected, setDetected]         = useState(false);
+  const [recents, setRecents]           = useState<LocationInfo[]>([]);
+  const [noResults, setNoResults]       = useState(false);
+  const [lastResults, setLastResults]   = useState<NominatimResult[]>([]); // stale cache
 
-  const searchRef = useRef<HTMLInputElement>(null);
-  const overlayRef = useRef<HTMLDivElement>(null);
+  const inputRef    = useRef<HTMLInputElement>(null);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const abortRef    = useRef<AbortController | null>(null);
 
-  // Filter cities by query
-  const filtered = query.trim()
-    ? POPULAR_CITIES.filter(
-        (c) =>
-          c.city.toLowerCase().includes(query.toLowerCase()) ||
-          (c.pincode && c.pincode.includes(query))
-      )
-    : POPULAR_CITIES;
-
-  // Focus search on open
   useEffect(() => {
     if (isOpen) {
-      setQuery("");
-      setPincodeInput("");
-      setPincodeError("");
-      setDetected(false);
-      setTimeout(() => searchRef.current?.focus(), 120);
+      setQuery(""); setResults([]); setNoResults(false);
+      setDetected(false); setRecents(getRecentLocations());
+      setTimeout(() => inputRef.current?.focus(), 150);
     }
   }, [isOpen]);
 
-  // Detect current location via Geolocation API
-  const handleDetectLocation = () => {
-    if (!navigator.geolocation) {
-      alert("Geolocation is not supported by your browser.");
-      return;
+  // Core search — uses multiple Nominatim params for max precision
+  const doSearch = useCallback(async (q: string) => {
+    const trimmed = q.trim();
+    if (trimmed.length < 2) { setResults([]); setNoResults(false); return; }
+
+    // Cancel previous in-flight request
+    if (abortRef.current) abortRef.current.abort();
+    abortRef.current = new AbortController();
+
+    setSearching(true);
+    setNoResults(false);
+
+    try {
+      const params = new URLSearchParams({
+        q: trimmed,
+        format: "jsonv2",
+        addressdetails: "1",
+        namedetails: "1",
+        extratags: "1",
+        limit: "10",
+        countrycodes: "in",
+        "accept-language": "en",
+        viewbox: INDIA_VIEWBOX,
+        bounded: "0",            // 0 = prefer viewbox but don't restrict
+        dedupe: "1",
+        featuretype: "settlement",
+      });
+
+      // Remove featuretype for general search — it restricts too much
+      params.delete("featuretype");
+
+      const url = `https://nominatim.openstreetmap.org/search?${params.toString()}`;
+      const res = await fetch(url, {
+        signal: abortRef.current.signal,
+        headers: {
+          "User-Agent": "FarmX-DeliveryApp/2.0 (contact@farmx.in)",
+          "Accept-Language": "en",
+        },
+      });
+
+      const data: NominatimResult[] = await res.json();
+
+      // Sort: higher importance first, but boost results with house numbers / roads
+      const sorted = data.sort((a, b) => {
+        const aScore = (a.address.house_number ? 0.3 : 0) + (a.address.road ? 0.2 : 0) + (a.importance || 0);
+        const bScore = (b.address.house_number ? 0.3 : 0) + (b.address.road ? 0.2 : 0) + (b.importance || 0);
+        return bScore - aScore;
+      });
+
+      setResults(sorted);
+      setLastResults(sorted);
+      setNoResults(sorted.length === 0);
+    } catch (err: unknown) {
+      if (err instanceof Error && err.name === "AbortError") return; // silently ignore cancelled
+      // Show stale results on network error
+      if (lastResults.length > 0) setResults(lastResults);
+      else setNoResults(true);
+    } finally {
+      setSearching(false);
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const handleQueryChange = (val: string) => {
+    setQuery(val);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    // 250ms debounce — fast enough to feel instant
+    debounceRef.current = setTimeout(() => doSearch(val), 250);
+  };
+
+  // GPS — zoom=18 gives building-level precision, zoom=16 gives street-level
+  const handleDetect = () => {
+    if (!navigator.geolocation) { toast.error("Geolocation not supported."); return; }
     setDetecting(true);
     navigator.geolocation.getCurrentPosition(
       async (pos) => {
         try {
-          const { latitude, longitude } = pos.coords;
+          const { latitude, longitude, accuracy } = pos.coords;
+          // Use zoom=18 for high accuracy (<20m), zoom=16 for lower accuracy
+          const zoom = accuracy < 50 ? 18 : accuracy < 200 ? 16 : 14;
+
           const res = await fetch(
-            `https://nominatim.openstreetmap.org/reverse?lat=${latitude}&lon=${longitude}&format=json&addressdetails=1`,
-            { headers: { "Accept-Language": "en" } }
+            `https://nominatim.openstreetmap.org/reverse?lat=${latitude}&lon=${longitude}&format=jsonv2&addressdetails=1&namedetails=1&extratags=1&zoom=${zoom}`,
+            {
+              headers: {
+                "User-Agent": "FarmX-DeliveryApp/2.0",
+                "Accept-Language": "en",
+              },
+            }
           );
           const data = await res.json();
-          const addr = data.address || {};
-          const city =
-            addr.city || addr.town || addr.village || addr.county || "Your Location";
-          const pincode = addr.postcode || "";
-          const state = addr.state || "";
-          const district = addr.county || addr.state_district || city;
-          const loc: LocationInfo = { city, pincode, state, district };
+          const loc = parseResult({ ...data, importance: 1, lat: String(latitude), lon: String(longitude) });
+
           setDetecting(false);
           setDetected(true);
           onLocationChange(loc);
           storeLocation(loc);
-          setTimeout(() => {
-            onClose();
-            setDetected(false);
-          }, 1000);
+          toast.success(`📍 ${loc.fullAddress?.split(", ").slice(0, 2).join(", ") || loc.city}`);
+          setTimeout(() => { onClose(); setDetected(false); }, 900);
         } catch {
           setDetecting(false);
-          alert("Could not fetch location details. Please select manually.");
+          toast.error("Could not fetch address. Please search manually.");
         }
       },
-      () => {
+      (err) => {
         setDetecting(false);
-        alert("Location access denied. Please allow location access or select manually.");
+        if (err.code === 1) toast.error("Location access denied. Please allow and retry.");
+        else toast.error("Could not detect location. Please search manually.");
       },
-      { timeout: 8000 }
+      { timeout: 12000, enableHighAccuracy: true, maximumAge: 0 }
     );
   };
 
-  // Select a city
-  const handleSelect = (loc: LocationInfo) => {
+  const handleSelect = (r: NominatimResult) => {
+    const loc = parseResult(r);
+    onLocationChange(loc);
+    storeLocation(loc);
+    const label = loc.fullAddress?.split(", ").slice(0, 2).join(", ") || loc.city;
+    toast.success(`📍 Delivering to ${label}`);
+    onClose();
+  };
+
+  const handleRecentSelect = (loc: LocationInfo) => {
     onLocationChange(loc);
     storeLocation(loc);
     toast.success(`📍 Delivering to ${loc.city}`);
     onClose();
   };
 
-  // Handle map selection (state -> district)
-  const handleMapSelect = (state: string, district: string, pincode?: string) => {
-    const loc: LocationInfo = {
-      city: district,
-      pincode: pincode || "",
-      state,
-      district,
-    };
-    onLocationChange(loc);
-    storeLocation(loc);
-    toast.success(`📍 Delivering to ${district}, ${state}`);
-    onClose();
-  };
-
-  // Submit pincode
-  const handlePincodeSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    const pin = pincodeInput.trim();
-    if (!/^\d{6}$/.test(pin)) {
-      setPincodeError("Please enter a valid 6-digit pincode.");
-      return;
-    }
-    const match = POPULAR_CITIES.find((c) => c.pincode === pin);
-    const loc: LocationInfo = match ? match : { city: "Your Location", pincode: pin };
-    onLocationChange(loc);
-    storeLocation(loc);
-    toast.success(`📍 Delivering to ${loc.city || pin}`);
-    onClose();
-  };
-
-  const TABS = [
-    { id: "city" as const, label: "🏙️ City" },
-    { id: "map" as const, label: "🗺️ Map" },
-    { id: "pincode" as const, label: "📍 Pincode" },
-  ];
+  const showRecents  = !query.trim() && recents.length > 0;
+  const showResults  = query.trim().length >= 2;
+  const showPopular  = !query.trim() && recents.length === 0;
 
   return (
     <AnimatePresence>
@@ -196,246 +373,207 @@ export default function LocationModal({
         <>
           {/* Backdrop */}
           <motion.div
-            ref={overlayRef}
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.2 }}
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
             className="fixed inset-0 bg-black/50 z-[70] backdrop-blur-sm"
             onClick={onClose}
           />
 
-          {/* Modal panel */}
+          {/* Sheet */}
           <motion.div
-            initial={{ opacity: 0, y: 40, scale: 0.96 }}
+            initial={{ opacity: 0, y: 60, scale: 0.97 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 40, scale: 0.96 }}
-            transition={{ type: "spring", stiffness: 400, damping: 32 }}
-            className="fixed bottom-0 left-0 right-0 md:bottom-auto md:top-1/2 md:left-1/2 md:-translate-x-1/2 md:-translate-y-1/2 md:max-w-lg md:w-full z-[75] bg-white md:rounded-2xl rounded-t-3xl shadow-2xl overflow-hidden"
+            exit={{ opacity: 0, y: 60, scale: 0.97 }}
+            transition={{ type: "spring", stiffness: 380, damping: 32 }}
+            className="fixed bottom-0 left-0 right-0 md:bottom-auto md:top-1/2 md:left-1/2 md:-translate-x-1/2 md:-translate-y-1/2 md:max-w-md md:w-full z-[75] bg-white md:rounded-2xl rounded-t-3xl shadow-2xl overflow-hidden"
             style={{ maxHeight: "92vh" }}
           >
+            {/* Drag handle (mobile) */}
+            <div className="flex justify-center pt-3 pb-1 md:hidden">
+              <div className="w-10 h-1 rounded-full bg-gray-200" />
+            </div>
+
             {/* Header */}
-            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-xl bg-green-50 flex items-center justify-center">
-                  <MapPin size={16} className="text-green-600" />
+            <div className="flex items-center justify-between px-5 py-3 border-b border-gray-100">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-green-50 flex items-center justify-center">
+                  <MapPin size={17} className="text-green-600" />
                 </div>
                 <div>
                   <h2 className="text-sm font-bold text-gray-900">Delivery Location</h2>
-                  <p className="text-[11px] text-gray-400">
-                    Currently:{" "}
-                    <span className="font-semibold text-green-600">
-                      {currentLocation.district || currentLocation.city}
-                    </span>
-                    {currentLocation.state &&
-                      currentLocation.state !== (currentLocation.district || currentLocation.city) && (
-                        <span className="text-gray-400">, {currentLocation.state}</span>
-                      )}
-                    {currentLocation.pincode && ` – ${currentLocation.pincode}`}
+                  <p className="text-[11px] text-gray-400 max-w-[200px] truncate">
+                    {currentLocation.fullAddress || currentLocation.city}
+                    {currentLocation.pincode && ` · ${currentLocation.pincode}`}
                   </p>
                 </div>
               </div>
-              <button
-                onClick={onClose}
-                className="p-2 rounded-xl hover:bg-gray-100 transition text-gray-400 hover:text-gray-700"
-              >
-                <X size={18} />
+              <button onClick={onClose} className="p-2 rounded-xl hover:bg-gray-100 transition text-gray-400">
+                <X size={17} />
               </button>
             </div>
 
-            {/* Detect location button */}
-            <div className="px-5 pt-4">
+            {/* GPS */}
+            <div className="px-5 pt-3 pb-2">
               <button
-                onClick={handleDetectLocation}
+                onClick={handleDetect}
                 disabled={detecting || detected}
-                className={`w-full flex items-center justify-center gap-2 py-3 rounded-xl font-semibold text-sm transition-all duration-200 border-2 ${
+                className={`w-full flex items-center justify-center gap-2 py-2.5 rounded-xl font-semibold text-sm transition-all border-2 ${
                   detected
                     ? "bg-green-600 text-white border-green-600"
-                    : "border-green-600 text-green-600 hover:bg-green-50"
+                    : "border-green-500 text-green-600 hover:bg-green-50 active:bg-green-100 disabled:opacity-60"
                 }`}
               >
                 {detecting ? (
-                  <>
-                    <Loader2 size={16} className="animate-spin" />
-                    Detecting your location…
-                  </>
+                  <><Loader2 size={15} className="animate-spin" /> Detecting precise location…</>
                 ) : detected ? (
-                  <>
-                    <CheckCircle2 size={16} />
-                    Location detected!
-                  </>
+                  <><CheckCircle2 size={15} /> Location detected!</>
                 ) : (
-                  <>
-                    <Navigation size={16} />
-                    Use My Current Location
-                  </>
+                  <><Navigation size={14} /> Use My Current Location</>
                 )}
               </button>
             </div>
 
-            {/* Divider */}
-            <div className="flex items-center gap-3 px-5 py-3">
-              <div className="flex-1 h-px bg-gray-100" />
-              <span className="text-[11px] text-gray-400 font-medium">or select manually</span>
-              <div className="flex-1 h-px bg-gray-100" />
-            </div>
-
-            {/* Tabs */}
-            <div className="flex gap-1 px-5 mb-3">
-              {TABS.map((t) => (
-                <button
-                  key={t.id}
-                  onClick={() => setTab(t.id)}
-                  className={`flex-1 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                    tab === t.id
-                      ? t.id === "map"
-                        ? "bg-blue-600 text-white"
-                        : "bg-green-600 text-white"
-                      : "bg-gray-100 text-gray-500 hover:bg-gray-200"
-                  }`}
-                >
-                  {t.label}
-                </button>
-              ))}
-            </div>
-
-            {/* Tab content */}
-            <div
-              className="px-5 overflow-y-auto"
-              style={{
-                maxHeight: tab === "map" ? "calc(92vh - 230px)" : "calc(92vh - 260px)",
-              }}
-            >
-              {/* ── CITY TAB ── */}
-              {tab === "city" && (
-                <>
-                  <div className="relative mb-3">
-                    <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                    <input
-                      ref={searchRef}
-                      type="text"
-                      value={query}
-                      onChange={(e) => setQuery(e.target.value)}
-                      placeholder="Search city or pincode…"
-                      className="w-full pl-9 pr-4 py-2.5 rounded-xl bg-gray-50 border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-green-400 focus:bg-white transition placeholder:text-gray-400"
-                    />
-                    {query && (
-                      <button
-                        onClick={() => setQuery("")}
-                        className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                      >
-                        <X size={14} />
-                      </button>
-                    )}
-                  </div>
-
-                  <div className="space-y-1 pb-5">
-                    {filtered.length === 0 ? (
-                      <p className="text-center text-sm text-gray-400 py-6">
-                        No cities found for "{query}"
-                      </p>
-                    ) : (
-                      filtered.map((loc) => {
-                        const isSelected = loc.city === currentLocation.city;
-                        return (
-                          <button
-                            key={loc.city}
-                            onClick={() => handleSelect(loc)}
-                            className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl transition-all ${
-                              isSelected
-                                ? "bg-green-50 border border-green-200"
-                                : "hover:bg-gray-50 border border-transparent"
-                            }`}
-                          >
-                            <div className="flex items-center gap-2.5">
-                              <div
-                                className={`w-7 h-7 rounded-lg flex items-center justify-center ${
-                                  isSelected ? "bg-green-600" : "bg-gray-100"
-                                }`}
-                              >
-                                <MapPin size={13} className={isSelected ? "text-white" : "text-gray-400"} />
-                              </div>
-                              <div className="text-left">
-                                <p className={`text-sm font-semibold ${isSelected ? "text-green-700" : "text-gray-800"}`}>
-                                  {loc.city}
-                                </p>
-                                <p className="text-[11px] text-gray-400">
-                                  {loc.state && `${loc.state} · `}
-                                  {loc.pincode && `PIN: ${loc.pincode}`}
-                                </p>
-                              </div>
-                            </div>
-                            {isSelected ? (
-                              <CheckCircle2 size={16} className="text-green-600 shrink-0" />
-                            ) : (
-                              <ChevronRight size={14} className="text-gray-300 shrink-0" />
-                            )}
-                          </button>
-                        );
-                      })
-                    )}
-                  </div>
-                </>
-              )}
-
-              {/* ── MAP TAB ── */}
-              {tab === "map" && (
-                <div className="pb-5">
-                  <p className="text-[11px] text-gray-400 mb-3 text-center">
-                    Click a dot on the map or search below — select State → District
-                  </p>
-                  <Suspense
-                    fallback={
-                      <div className="flex items-center justify-center h-48">
-                        <div className="flex flex-col items-center gap-2">
-                          <Loader2 size={24} className="animate-spin text-green-500" />
-                          <span className="text-xs text-gray-400">Loading map…</span>
-                        </div>
-                      </div>
-                    }
+            {/* Search */}
+            <div className="px-5 pb-2">
+              <div className="relative">
+                <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                <input
+                  ref={inputRef}
+                  type="text"
+                  value={query}
+                  onChange={(e) => handleQueryChange(e.target.value)}
+                  placeholder="Street, colony, landmark, office, hospital…"
+                  className="w-full pl-10 pr-9 py-3 rounded-xl bg-gray-50 border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-green-400 focus:bg-white transition placeholder:text-gray-400"
+                />
+                {searching && (
+                  <Loader2 size={13} className="absolute right-3.5 top-1/2 -translate-y-1/2 animate-spin text-green-500" />
+                )}
+                {query && !searching && (
+                  <button
+                    onClick={() => { setQuery(""); setResults([]); setNoResults(false); }}
+                    className="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
                   >
-                    <IndiaMapSelector
-                      onSelect={handleMapSelect}
-                      selectedState={currentLocation.state}
-                      selectedDistrict={currentLocation.district}
-                    />
-                  </Suspense>
+                    <X size={13} />
+                  </button>
+                )}
+              </div>
+              <p className="text-[10px] text-gray-400 mt-1 px-0.5">
+                Search any street, building, shop, hospital, school or landmark in India
+              </p>
+            </div>
+
+            {/* Scrollable results */}
+            <div className="overflow-y-auto px-5 pb-6" style={{ maxHeight: "calc(92vh - 230px)" }}>
+
+              {/* No results */}
+              {noResults && (
+                <div className="text-center py-10">
+                  <div className="w-12 h-12 rounded-full bg-gray-100 flex items-center justify-center mx-auto mb-3">
+                    <Search size={19} className="text-gray-300" />
+                  </div>
+                  <p className="text-sm font-semibold text-gray-600">No results for "{query}"</p>
+                  <p className="text-xs text-gray-400 mt-1">Try adding city name, e.g. "MG Road, Bangalore"</p>
                 </div>
               )}
 
-              {/* ── PINCODE TAB ── */}
-              {tab === "pincode" && (
-                <form onSubmit={handlePincodeSubmit} className="pb-5">
-                  <div className="space-y-3">
-                    <div className="relative">
-                      <MapPin size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                      <input
-                        type="text"
-                        inputMode="numeric"
-                        maxLength={6}
-                        value={pincodeInput}
-                        onChange={(e) => {
-                          setPincodeInput(e.target.value.replace(/\D/g, ""));
-                          setPincodeError("");
-                        }}
-                        placeholder="Enter 6-digit pincode"
-                        className="w-full pl-9 pr-4 py-3 rounded-xl bg-gray-50 border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-green-400 focus:bg-white transition placeholder:text-gray-400 tracking-widest font-mono"
-                      />
-                    </div>
-                    {pincodeError && (
-                      <p className="text-xs text-red-500 font-medium">{pincodeError}</p>
-                    )}
-                    <button
-                      type="submit"
-                      className="w-full py-3 bg-green-600 hover:bg-green-700 text-white font-bold rounded-xl text-sm transition"
-                    >
-                      Apply Pincode
-                    </button>
-                    <p className="text-center text-[11px] text-gray-400">
-                      We'll show you products available in your area
-                    </p>
+              {/* Search results */}
+              {showResults && results.length > 0 && (
+                <div className="space-y-0.5">
+                  {results.map((r) => {
+                    const { primary, secondary } = formatDisplayName(r);
+                    return (
+                      <button
+                        key={r.place_id}
+                        onClick={() => handleSelect(r)}
+                        className="w-full flex items-start gap-3 px-3 py-3 rounded-xl hover:bg-green-50 active:bg-green-100 transition-all text-left group"
+                      >
+                        <div className="w-8 h-8 rounded-lg bg-gray-100 group-hover:bg-green-100 flex items-center justify-center shrink-0 mt-0.5 transition-colors">
+                          <PlaceIcon r={r} />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-semibold text-gray-800 leading-snug line-clamp-1">{primary}</p>
+                          {secondary && (
+                            <p className="text-[11px] text-gray-400 mt-0.5 line-clamp-1">{secondary}</p>
+                          )}
+                          {r.address.postcode && (
+                            <span className="text-[10px] text-green-600 font-medium mt-0.5 inline-block">
+                              PIN {r.address.postcode}
+                            </span>
+                          )}
+                        </div>
+                        <ChevronRight size={13} className="text-gray-300 group-hover:text-green-500 shrink-0 mt-1.5 transition-colors" />
+                      </button>
+                    );
+                  })}
+                  <p className="text-[10px] text-center text-gray-300 pt-2">
+                    Powered by OpenStreetMap · India street data
+                  </p>
+                </div>
+              )}
+
+              {/* Recents */}
+              {showRecents && (
+                <div>
+                  <div className="flex items-center gap-1.5 mb-2 mt-1">
+                    <Clock size={11} className="text-gray-400" />
+                    <span className="text-[11px] font-bold text-gray-400 uppercase tracking-widest">Recent</span>
                   </div>
-                </form>
+                  <div className="space-y-0.5">
+                    {recents.map((loc, i) => (
+                      <button
+                        key={i}
+                        onClick={() => handleRecentSelect(loc)}
+                        className="w-full flex items-center gap-3 px-3 py-3 rounded-xl hover:bg-gray-50 active:bg-gray-100 transition text-left"
+                      >
+                        <div className="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center shrink-0">
+                          <Clock size={13} className="text-gray-400" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-semibold text-gray-700 truncate">{loc.city}</p>
+                          {loc.fullAddress && (
+                            <p className="text-[11px] text-gray-400 truncate">{loc.fullAddress}</p>
+                          )}
+                        </div>
+                        {loc.pincode && (
+                          <span className="text-[10px] text-green-600 font-medium shrink-0">PIN {loc.pincode}</span>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Popular areas */}
+              {showPopular && (
+                <div>
+                  <div className="flex items-center gap-1.5 mb-2 mt-1">
+                    <Star size={11} className="text-gray-400" />
+                    <span className="text-[11px] font-bold text-gray-400 uppercase tracking-widest">Popular Areas</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    {[
+                      { label: "Connaught Place", city: "New Delhi" },
+                      { label: "Bandra West", city: "Mumbai" },
+                      { label: "Koramangala", city: "Bengaluru" },
+                      { label: "Jubilee Hills", city: "Hyderabad" },
+                      { label: "Anna Nagar", city: "Chennai" },
+                      { label: "Salt Lake City", city: "Kolkata" },
+                      { label: "Civil Lines", city: "Jaipur" },
+                      { label: "Aundh", city: "Pune" },
+                    ].map((s) => (
+                      <button
+                        key={s.label}
+                        onClick={() => handleQueryChange(`${s.label}, ${s.city}`)}
+                        className="flex items-center gap-2 px-3 py-2.5 rounded-xl bg-gray-50 hover:bg-green-50 border border-gray-100 hover:border-green-200 transition text-left"
+                      >
+                        <MapPin size={10} className="text-green-500 shrink-0" />
+                        <div className="min-w-0">
+                          <p className="text-[11px] font-semibold text-gray-700 truncate">{s.label}</p>
+                          <p className="text-[10px] text-gray-400">{s.city}</p>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
               )}
             </div>
           </motion.div>

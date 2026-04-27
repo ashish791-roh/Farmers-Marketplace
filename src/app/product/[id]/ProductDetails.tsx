@@ -2,7 +2,20 @@
 
 import { use, useEffect, useState, useRef, Suspense } from "react";
 import { db } from "@/lib/firebase";
-import { doc, getDoc, collection, getDocs, query, where, limit } from "firebase/firestore";
+import {
+  doc,
+  getDoc,
+  collection,
+  getDocs,
+  query,
+  where,
+  limit,
+  addDoc,
+  serverTimestamp,
+  onSnapshot,
+  orderBy,
+  updateDoc,
+} from "firebase/firestore";
 import Navbar from "@/components/Navbar";
 import { useCart } from "@/context/CartContext";
 import { useWishlist } from "@/context/WishlistContext";
@@ -21,6 +34,11 @@ import {
   ShieldCheck,
   Truck,
   RotateCcw,
+  ThumbsUp,
+  MessageSquare,
+  Send,
+  ChevronDown,
+  Filter,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { emitAddToCart } from "@/lib/cartEvent";
@@ -34,8 +52,29 @@ type Props = {
   params: Promise<{ id: string }>;
 };
 
+// ── Types ─────────────────────────────────────────────────────────────────────
+type Review = {
+  id: string;
+  userId: string;
+  userName: string;
+  rating: number;
+  comment: string;
+  createdAt: any;
+  helpful: number;
+  helpfulBy?: string[];
+  verifiedPurchase?: boolean;
+};
+
 // ── Star Rating Display ────────────────────────────────────────────────────────
-function StarRating({ rating, reviewCount }: { rating: number; reviewCount?: number }) {
+function StarRating({
+  rating,
+  reviewCount,
+  size = 18,
+}: {
+  rating: number;
+  reviewCount?: number;
+  size?: number;
+}) {
   return (
     <div className="flex items-center gap-2 mt-3">
       <div className="flex items-center gap-0.5">
@@ -44,13 +83,15 @@ function StarRating({ rating, reviewCount }: { rating: number; reviewCount?: num
           const partial = !filled && rating > star - 1;
           return (
             <span key={star} className="relative inline-block">
-              <Star size={18} className="text-gray-200" fill="currentColor" />
+              <Star size={size} className="text-gray-200" fill="currentColor" />
               {(filled || partial) && (
                 <span
                   className="absolute inset-0 overflow-hidden"
-                  style={{ width: filled ? "100%" : `${(rating - (star - 1)) * 100}%` }}
+                  style={{
+                    width: filled ? "100%" : `${(rating - (star - 1)) * 100}%`,
+                  }}
                 >
-                  <Star size={18} className="text-yellow-400" fill="currentColor" />
+                  <Star size={size} className="text-yellow-400" fill="currentColor" />
                 </span>
               )}
             </span>
@@ -59,14 +100,515 @@ function StarRating({ rating, reviewCount }: { rating: number; reviewCount?: num
       </div>
       <span className="text-sm font-semibold text-gray-700">{rating.toFixed(1)}</span>
       {reviewCount !== undefined && (
-        <span className="text-sm text-gray-400">({reviewCount.toLocaleString()} reviews)</span>
+        <span className="text-sm text-gray-400">
+          ({reviewCount.toLocaleString()} {reviewCount === 1 ? "review" : "reviews"})
+        </span>
       )}
     </div>
   );
 }
 
+// ── Interactive Star Selector ──────────────────────────────────────────────────
+function StarSelector({
+  value,
+  onChange,
+}: {
+  value: number;
+  onChange: (v: number) => void;
+}) {
+  const [hover, setHover] = useState(0);
+  return (
+    <div className="flex items-center gap-1">
+      {[1, 2, 3, 4, 5].map((star) => (
+        <button
+          key={star}
+          type="button"
+          onClick={() => onChange(star)}
+          onMouseEnter={() => setHover(star)}
+          onMouseLeave={() => setHover(0)}
+          className="transition-transform hover:scale-110"
+          aria-label={`Rate ${star} star${star > 1 ? "s" : ""}`}
+        >
+          <Star
+            size={28}
+            className={
+              (hover || value) >= star ? "text-yellow-400" : "text-gray-200"
+            }
+            fill="currentColor"
+          />
+        </button>
+      ))}
+      <span className="ml-2 text-sm text-gray-500 font-medium">
+        {["", "Poor", "Fair", "Good", "Very Good", "Excellent"][hover || value] || "Select rating"}
+      </span>
+    </div>
+  );
+}
+
+// ── Rating Breakdown Bar ───────────────────────────────────────────────────────
+function RatingBreakdown({
+  reviews,
+  avgRating,
+}: {
+  reviews: Review[];
+  avgRating: number;
+}) {
+  const counts = [5, 4, 3, 2, 1].map((star) => ({
+    star,
+    count: reviews.filter((r) => Math.round(r.rating) === star).length,
+  }));
+  const max = Math.max(...counts.map((c) => c.count), 1);
+
+  return (
+    <div className="flex flex-col sm:flex-row items-start gap-6 p-5 bg-amber-50 rounded-2xl border border-amber-100">
+      {/* Big average */}
+      <div className="flex flex-col items-center shrink-0">
+        <span className="text-5xl font-extrabold text-gray-900">
+          {avgRating.toFixed(1)}
+        </span>
+        <div className="flex gap-0.5 mt-1">
+          {[1, 2, 3, 4, 5].map((s) => (
+            <Star
+              key={s}
+              size={14}
+              fill="currentColor"
+              className={s <= Math.round(avgRating) ? "text-yellow-400" : "text-gray-200"}
+            />
+          ))}
+        </div>
+        <span className="text-xs text-gray-500 mt-1">
+          {reviews.length} {reviews.length === 1 ? "review" : "reviews"}
+        </span>
+      </div>
+
+      {/* Bars */}
+      <div className="flex-1 w-full space-y-1.5">
+        {counts.map(({ star, count }) => (
+          <div key={star} className="flex items-center gap-2">
+            <span className="text-xs text-gray-500 w-5 text-right">{star}</span>
+            <Star size={11} fill="currentColor" className="text-yellow-400 shrink-0" />
+            <div className="flex-1 h-2 bg-gray-200 rounded-full overflow-hidden">
+              <motion.div
+                className="h-full bg-yellow-400 rounded-full"
+                initial={{ width: 0 }}
+                animate={{ width: `${(count / max) * 100}%` }}
+                transition={{ duration: 0.6, delay: (5 - star) * 0.07 }}
+              />
+            </div>
+            <span className="text-xs text-gray-400 w-6">{count}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── Write a Review Form ────────────────────────────────────────────────────────
+function WriteReviewForm({
+  productId,
+  user,
+  existingReview,
+  onSuccess,
+}: {
+  productId: string;
+  user: any;
+  existingReview: Review | null;
+  onSuccess: () => void;
+}) {
+  const [rating, setRating] = useState(existingReview?.rating ?? 0);
+  const [comment, setComment] = useState(existingReview?.comment ?? "");
+  const [submitting, setSubmitting] = useState(false);
+
+  const handleSubmit = async () => {
+    if (rating === 0) {
+      toast.error("Please select a star rating");
+      return;
+    }
+    if (comment.trim().length < 10) {
+      toast.error("Please write at least 10 characters");
+      return;
+    }
+    setSubmitting(true);
+    try {
+      // Check verified purchase
+      const ordersSnap = await getDocs(
+        query(
+          collection(db, "orders"),
+          where("userId", "==", user.uid),
+          where("status", "in", ["delivered", "paid", "confirmed", "processing"])
+        )
+      );
+      const isVerified = ordersSnap.docs.some((d) =>
+        (d.data().items || []).some((item: any) => item.id === productId)
+      );
+
+      const reviewData = {
+        userId: user.uid,
+        userName: user.displayName || user.email?.split("@")[0] || "Anonymous",
+        rating,
+        comment: comment.trim(),
+        createdAt: serverTimestamp(),
+        helpful: existingReview?.helpful ?? 0,
+        helpfulBy: existingReview?.helpfulBy ?? [],
+        verifiedPurchase: isVerified,
+      };
+
+      if (existingReview) {
+        await updateDoc(
+          doc(db, "products", productId, "reviews", existingReview.id),
+          reviewData
+        );
+        toast.success("Review updated ✅");
+      } else {
+        await addDoc(collection(db, "products", productId, "reviews"), reviewData);
+        toast.success("Review submitted 🌟");
+      }
+      onSuccess();
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to submit review");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="bg-white border border-gray-100 rounded-2xl p-5 shadow-sm"
+    >
+      <h3 className="font-bold text-gray-900 mb-4 flex items-center gap-2">
+        <MessageSquare size={16} className="text-green-600" />
+        {existingReview ? "Edit your review" : "Write a review"}
+      </h3>
+
+      <div className="mb-4">
+        <label className="block text-sm font-medium text-gray-600 mb-2">Your rating</label>
+        <StarSelector value={rating} onChange={setRating} />
+      </div>
+
+      <div className="mb-4">
+        <label className="block text-sm font-medium text-gray-600 mb-2">Your review</label>
+        <textarea
+          value={comment}
+          onChange={(e) => setComment(e.target.value)}
+          rows={3}
+          placeholder="Share your experience with this product…"
+          className="w-full border border-gray-200 rounded-xl p-3 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 resize-none transition"
+          maxLength={500}
+        />
+        <p className="text-xs text-gray-400 text-right mt-1">{comment.length}/500</p>
+      </div>
+
+      <button
+        onClick={handleSubmit}
+        disabled={submitting}
+        className="flex items-center gap-2 bg-green-600 hover:bg-green-700 disabled:opacity-60 text-white px-5 py-2.5 rounded-xl font-semibold text-sm transition"
+      >
+        <Send size={14} />
+        {submitting ? "Submitting…" : existingReview ? "Update Review" : "Submit Review"}
+      </button>
+    </motion.div>
+  );
+}
+
+// ── Single Review Card ─────────────────────────────────────────────────────────
+function ReviewCard({
+  review,
+  currentUserId,
+  productId,
+}: {
+  review: Review;
+  currentUserId?: string;
+  productId: string;
+}) {
+  const [markingHelpful, setMarkingHelpful] = useState(false);
+  const hasMarked = currentUserId
+    ? (review.helpfulBy ?? []).includes(currentUserId)
+    : false;
+
+  const markHelpful = async () => {
+    if (!currentUserId || hasMarked) return;
+    setMarkingHelpful(true);
+    try {
+      await updateDoc(doc(db, "products", productId, "reviews", review.id), {
+        helpful: (review.helpful ?? 0) + 1,
+        helpfulBy: [...(review.helpfulBy ?? []), currentUserId],
+      });
+    } catch {
+      toast.error("Could not mark as helpful");
+    } finally {
+      setMarkingHelpful(false);
+    }
+  };
+
+  const initials = review.userName
+    .split(" ")
+    .map((n) => n[0])
+    .join("")
+    .toUpperCase()
+    .slice(0, 2);
+
+  const date = review.createdAt?.toDate
+    ? review.createdAt.toDate().toLocaleDateString("en-IN", {
+        day: "numeric",
+        month: "short",
+        year: "numeric",
+      })
+    : "Recently";
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="bg-white border border-gray-100 rounded-2xl p-5 shadow-sm"
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex items-center gap-3">
+          {/* Avatar */}
+          <div className="w-9 h-9 rounded-full bg-green-100 flex items-center justify-center font-bold text-xs text-green-700 shrink-0">
+            {initials}
+          </div>
+          <div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="font-semibold text-sm text-gray-800">
+                {review.userName}
+              </span>
+              {review.verifiedPurchase && (
+                <span className="flex items-center gap-1 text-[10px] font-bold text-green-700 bg-green-50 border border-green-200 px-2 py-0.5 rounded-full">
+                  <BadgeCheck size={9} /> Verified Purchase
+                </span>
+              )}
+            </div>
+            <p className="text-xs text-gray-400">{date}</p>
+          </div>
+        </div>
+        {/* Stars */}
+        <div className="flex gap-0.5 shrink-0">
+          {[1, 2, 3, 4, 5].map((s) => (
+            <Star
+              key={s}
+              size={13}
+              fill="currentColor"
+              className={s <= review.rating ? "text-yellow-400" : "text-gray-200"}
+            />
+          ))}
+        </div>
+      </div>
+
+      <p className="mt-3 text-sm text-gray-600 leading-relaxed">{review.comment}</p>
+
+      {/* Helpful */}
+      <div className="mt-3 flex items-center gap-2">
+        <button
+          onClick={markHelpful}
+          disabled={!currentUserId || hasMarked || markingHelpful}
+          className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full border transition ${
+            hasMarked
+              ? "border-green-400 bg-green-50 text-green-700"
+              : "border-gray-200 text-gray-500 hover:border-green-400 hover:text-green-600 disabled:opacity-50 disabled:cursor-not-allowed"
+          }`}
+        >
+          <ThumbsUp size={11} />
+          Helpful {review.helpful > 0 && `(${review.helpful})`}
+        </button>
+      </div>
+    </motion.div>
+  );
+}
+
+// ── Reviews Section ────────────────────────────────────────────────────────────
+type SortOption = "newest" | "oldest" | "highest" | "lowest" | "most_helpful";
+
+function ReviewsSection({
+  productId,
+  user,
+}: {
+  productId: string;
+  user: any;
+}) {
+  const [reviews, setReviews] = useState<Review[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showForm, setShowForm] = useState(false);
+  const [sortBy, setSortBy] = useState<SortOption>("newest");
+  const [showAll, setShowAll] = useState(false);
+  const INITIAL_SHOW = 3;
+
+  useEffect(() => {
+    const unsub = onSnapshot(
+      query(
+        collection(db, "products", productId, "reviews"),
+        orderBy("createdAt", "desc")
+      ),
+      (snap) => {
+        setReviews(
+          snap.docs.map((d) => ({ id: d.id, ...d.data() } as Review))
+        );
+        setLoading(false);
+      }
+    );
+    return () => unsub();
+  }, [productId]);
+
+  const myReview = user
+    ? reviews.find((r) => r.userId === user.uid) ?? null
+    : null;
+
+  const sorted = [...reviews].sort((a, b) => {
+    if (sortBy === "newest")
+      return (b.createdAt?.seconds ?? 0) - (a.createdAt?.seconds ?? 0);
+    if (sortBy === "oldest")
+      return (a.createdAt?.seconds ?? 0) - (b.createdAt?.seconds ?? 0);
+    if (sortBy === "highest") return b.rating - a.rating;
+    if (sortBy === "lowest") return a.rating - b.rating;
+    if (sortBy === "most_helpful") return (b.helpful ?? 0) - (a.helpful ?? 0);
+    return 0;
+  });
+
+  const avgRating =
+    reviews.length > 0
+      ? reviews.reduce((s, r) => s + r.rating, 0) / reviews.length
+      : 0;
+
+  const visible = showAll ? sorted : sorted.slice(0, INITIAL_SHOW);
+
+  return (
+    <section className="mt-10">
+      <div className="flex items-center justify-between mb-5">
+        <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+          <Star size={18} className="text-yellow-400" fill="currentColor" />
+          Customer Reviews
+          {reviews.length > 0 && (
+            <span className="text-sm font-normal text-gray-400 ml-1">
+              ({reviews.length})
+            </span>
+          )}
+        </h2>
+
+        {user && (
+          <button
+            onClick={() => setShowForm((v) => !v)}
+            className="flex items-center gap-1.5 text-sm font-semibold text-green-600 border border-green-200 px-4 py-2 rounded-xl hover:bg-green-50 transition"
+          >
+            <MessageSquare size={14} />
+            {myReview ? "Edit Review" : "Write Review"}
+          </button>
+        )}
+      </div>
+
+      {/* Rating breakdown */}
+      {reviews.length > 0 && (
+        <RatingBreakdown reviews={reviews} avgRating={avgRating} />
+      )}
+
+      {/* Write / Edit form */}
+      <AnimatePresence>
+        {showForm && user && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: "auto" }}
+            exit={{ opacity: 0, height: 0 }}
+            className="mt-5 overflow-hidden"
+          >
+            <WriteReviewForm
+              productId={productId}
+              user={user}
+              existingReview={myReview}
+              onSuccess={() => setShowForm(false)}
+            />
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {!user && (
+        <p className="mt-4 text-sm text-gray-500 italic bg-gray-50 rounded-xl px-4 py-3 border border-gray-100">
+          Please sign in to write a review.
+        </p>
+      )}
+
+      {/* Sort controls */}
+      {reviews.length > 1 && (
+        <div className="mt-5 flex items-center gap-2 flex-wrap">
+          <Filter size={13} className="text-gray-400" />
+          <span className="text-xs text-gray-500 font-medium">Sort by:</span>
+          {(
+            [
+              ["newest", "Newest"],
+              ["highest", "Highest rated"],
+              ["lowest", "Lowest rated"],
+              ["most_helpful", "Most helpful"],
+            ] as [SortOption, string][]
+          ).map(([val, label]) => (
+            <button
+              key={val}
+              onClick={() => setSortBy(val)}
+              className={`text-xs px-3 py-1.5 rounded-full border transition font-medium ${
+                sortBy === val
+                  ? "bg-green-600 text-white border-green-600"
+                  : "border-gray-200 text-gray-500 hover:border-green-400"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Reviews list */}
+      {loading ? (
+        <div className="mt-5 space-y-3">
+          {[1, 2].map((i) => (
+            <div key={i} className="bg-gray-100 rounded-2xl h-28 animate-pulse" />
+          ))}
+        </div>
+      ) : reviews.length === 0 ? (
+        <div className="mt-6 text-center py-10 border-2 border-dashed border-gray-200 rounded-2xl">
+          <Star size={32} className="mx-auto text-gray-300 mb-2" fill="currentColor" />
+          <p className="text-gray-500 font-medium">No reviews yet</p>
+          <p className="text-sm text-gray-400 mt-1">
+            Be the first to share your experience!
+          </p>
+        </div>
+      ) : (
+        <div className="mt-5 space-y-3">
+          {visible.map((review) => (
+            <ReviewCard
+              key={review.id}
+              review={review}
+              currentUserId={user?.uid}
+              productId={productId}
+            />
+          ))}
+
+          {sorted.length > INITIAL_SHOW && (
+            <button
+              onClick={() => setShowAll((v) => !v)}
+              className="w-full flex items-center justify-center gap-2 text-sm font-semibold text-green-600 border border-green-200 py-3 rounded-xl hover:bg-green-50 transition"
+            >
+              <ChevronDown
+                size={16}
+                className={`transition-transform ${showAll ? "rotate-180" : ""}`}
+              />
+              {showAll
+                ? "Show fewer reviews"
+                : `Show all ${sorted.length} reviews`}
+            </button>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
+
 // ── Farmer Verification Badge ─────────────────────────────────────────────────
-function FarmerBadge({ farmerName, isVerified }: { farmerName: string; isVerified?: boolean }) {
+function FarmerBadge({
+  farmerName,
+  isVerified,
+}: {
+  farmerName: string;
+  isVerified?: boolean;
+}) {
   return (
     <div className="mt-5 flex items-center gap-3 p-3 bg-green-50 border border-green-100 rounded-xl">
       <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center shrink-0">
@@ -75,7 +617,9 @@ function FarmerBadge({ farmerName, isVerified }: { farmerName: string; isVerifie
       <div className="flex-1 min-w-0">
         <p className="text-xs text-gray-500 mb-0.5">Sold by</p>
         <div className="flex items-center gap-1.5">
-          <span className="font-semibold text-gray-800 text-sm truncate">{farmerName}</span>
+          <span className="font-semibold text-gray-800 text-sm truncate">
+            {farmerName}
+          </span>
           {isVerified && (
             <span className="flex items-center gap-1 px-2 py-0.5 bg-green-600 text-white text-xs rounded-full font-medium shrink-0">
               <BadgeCheck size={11} />
@@ -89,11 +633,18 @@ function FarmerBadge({ farmerName, isVerified }: { farmerName: string; isVerifie
 }
 
 // ── Image Gallery ─────────────────────────────────────────────────────────────
-function ImageGallery({ images, productName }: { images: string[]; productName: string }) {
+function ImageGallery({
+  images,
+  productName,
+}: {
+  images: string[];
+  productName: string;
+}) {
   const [activeIdx, setActiveIdx] = useState(0);
-
-  const prev = () => setActiveIdx((i) => (i === 0 ? images.length - 1 : i - 1));
-  const next = () => setActiveIdx((i) => (i === images.length - 1 ? 0 : i + 1));
+  const prev = () =>
+    setActiveIdx((i) => (i === 0 ? images.length - 1 : i - 1));
+  const next = () =>
+    setActiveIdx((i) => (i === images.length - 1 ? 0 : i + 1));
 
   return (
     <div className="flex flex-col gap-3">
@@ -109,7 +660,8 @@ function ImageGallery({ images, productName }: { images: string[]; productName: 
             exit={{ opacity: 0 }}
             transition={{ duration: 0.2 }}
             onError={(e) => {
-              e.currentTarget.src = "https://via.placeholder.com/600x400?text=Product";
+              e.currentTarget.src =
+                "https://via.placeholder.com/600x400?text=Product";
             }}
           />
         </AnimatePresence>
@@ -133,7 +685,9 @@ function ImageGallery({ images, productName }: { images: string[]; productName: 
                 <button
                   key={i}
                   onClick={() => setActiveIdx(i)}
-                  className={`h-2 rounded-full transition-all ${i === activeIdx ? "bg-green-600 w-4" : "w-2 bg-white/70"}`}
+                  className={`h-2 rounded-full transition-all ${
+                    i === activeIdx ? "bg-green-600 w-4" : "w-2 bg-white/70"
+                  }`}
                 />
               ))}
             </div>
@@ -148,7 +702,9 @@ function ImageGallery({ images, productName }: { images: string[]; productName: 
               key={i}
               onClick={() => setActiveIdx(i)}
               className={`relative shrink-0 w-16 h-16 rounded-lg overflow-hidden border-2 transition ${
-                i === activeIdx ? "border-green-500 shadow-md" : "border-transparent hover:border-gray-300"
+                i === activeIdx
+                  ? "border-green-500 shadow-md"
+                  : "border-transparent hover:border-gray-300"
               }`}
             >
               <Image
@@ -158,7 +714,8 @@ function ImageGallery({ images, productName }: { images: string[]; productName: 
                 sizes="64px"
                 className="object-cover"
                 onError={(e) => {
-                  (e.target as HTMLImageElement).src = "https://via.placeholder.com/80x80?text=img";
+                  (e.target as HTMLImageElement).src =
+                    "https://via.placeholder.com/80x80?text=img";
                 }}
               />
             </button>
@@ -212,11 +769,16 @@ function CustomersAlsoBought({
 
   return (
     <section className="mt-12">
-      <h2 className="text-xl font-bold text-gray-800 mb-4">Customers Also Bought</h2>
+      <h2 className="text-xl font-bold text-gray-800 mb-4">
+        Customers Also Bought
+      </h2>
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
         {loading
           ? Array.from({ length: 6 }).map((_, i) => (
-              <div key={i} className="bg-gray-100 rounded-2xl h-52 animate-pulse" />
+              <div
+                key={i}
+                className="bg-gray-100 rounded-2xl h-52 animate-pulse"
+              />
             ))
           : products.map((p: any) => (
               <ProductCard
@@ -280,7 +842,10 @@ function StickyBuyBar({
               <p className="text-green-600 font-bold text-lg leading-tight">
                 ₹{product.price}
                 {product.unit && (
-                  <span className="text-xs font-normal text-gray-400"> /{product.unit}</span>
+                  <span className="text-xs font-normal text-gray-400">
+                    {" "}
+                    /{product.unit}
+                  </span>
                 )}
               </p>
             </div>
@@ -320,6 +885,10 @@ function ProductDetailsContent({ id }: { id: string }) {
   const [showLoginModal, setShowLoginModal] = useState(false);
   const sentinelRef = useRef<HTMLDivElement>(null);
 
+  // Real-time average rating from reviews subcollection
+  const [liveRating, setLiveRating] = useState<number | null>(null);
+  const [liveReviewCount, setLiveReviewCount] = useState<number>(0);
+
   const wishlisted = isWishlisted(id);
 
   useEffect(() => {
@@ -338,12 +907,37 @@ function ProductDetailsContent({ id }: { id: string }) {
     fetchProduct();
   }, [id]);
 
+  // Listen to reviews for live avg rating
+  useEffect(() => {
+    const unsub = onSnapshot(
+      query(collection(db, "products", id, "reviews")),
+      (snap) => {
+        const reviews = snap.docs.map((d) => d.data() as Review);
+        setLiveReviewCount(reviews.length);
+        if (reviews.length > 0) {
+          setLiveRating(
+            reviews.reduce((s, r) => s + r.rating, 0) / reviews.length
+          );
+        } else {
+          setLiveRating(null);
+        }
+      }
+    );
+    return () => unsub();
+  }, [id]);
+
   const handleAddToCart = () => {
     if (!product) return;
     if (!user) {
       localStorage.setItem(
         "pendingCartItem",
-        JSON.stringify({ id: product.id, name: product.name, price: product.price, image: product.image, quantity: qty })
+        JSON.stringify({
+          id: product.id,
+          name: product.name,
+          price: product.price,
+          image: product.image,
+          quantity: qty,
+        })
       );
       setShowLoginModal(true);
       return;
@@ -423,7 +1017,9 @@ function ProductDetailsContent({ id }: { id: string }) {
         <main className="max-w-6xl mx-auto p-6 md:p-10 text-center">
           <div className="py-20">
             <Package size={56} className="mx-auto mb-4 text-gray-300" />
-            <h2 className="text-2xl font-bold text-gray-600 mb-2">Product not found</h2>
+            <h2 className="text-2xl font-bold text-gray-600 mb-2">
+              Product not found
+            </h2>
             <p className="text-gray-400 mb-6">
               This product may have been removed or doesn't exist.
             </p>
@@ -444,9 +1040,13 @@ function ProductDetailsContent({ id }: { id: string }) {
       ? product.images
       : [product.image || "https://via.placeholder.com/600x400?text=Product"];
 
-  const rating = product.rating ?? 4.2;
-  const reviewCount = product.reviewCount;
-  const isVerifiedFarmer = product.isVerifiedFarmer ?? product.farmerVerified ?? false;
+  // Use live rating if available, fallback to product.rating
+  const displayRating =
+    liveRating !== null ? liveRating : product.rating ?? 4.2;
+  const displayReviewCount =
+    liveReviewCount > 0 ? liveReviewCount : product.reviewCount;
+  const isVerifiedFarmer =
+    product.isVerifiedFarmer ?? product.farmerVerified ?? false;
 
   return (
     <>
@@ -455,11 +1055,17 @@ function ProductDetailsContent({ id }: { id: string }) {
       <main className="max-w-6xl mx-auto p-4 md:p-10 pb-24 md:pb-10">
         {/* BREADCRUMB */}
         <nav className="flex items-center gap-2 text-sm text-gray-400 mb-6">
-          <Link href="/" className="hover:text-green-600 transition">Home</Link>
+          <Link href="/" className="hover:text-green-600 transition">
+            Home
+          </Link>
           <span>/</span>
-          <Link href="/products" className="hover:text-green-600 transition">Products</Link>
+          <Link href="/products" className="hover:text-green-600 transition">
+            Products
+          </Link>
           <span>/</span>
-          <span className="text-gray-700 font-medium truncate max-w-[200px]">{product.name}</span>
+          <span className="text-gray-700 font-medium truncate max-w-[200px]">
+            {product.name}
+          </span>
         </nav>
 
         <motion.div
@@ -472,7 +1078,9 @@ function ProductDetailsContent({ id }: { id: string }) {
             <ImageGallery images={galleryImages} productName={product.name} />
             <button
               onClick={handleWishlist}
-              aria-label={wishlisted ? "Remove from wishlist" : "Add to wishlist"}
+              aria-label={
+                wishlisted ? "Remove from wishlist" : "Add to wishlist"
+              }
               className={`absolute top-3 right-3 p-2.5 rounded-full shadow-lg transition z-10 ${
                 wishlisted
                   ? "bg-red-500 text-white"
@@ -485,24 +1093,39 @@ function ProductDetailsContent({ id }: { id: string }) {
 
           {/* RIGHT: DETAILS */}
           <div>
-            <h1 className="text-2xl md:text-3xl font-bold text-gray-900">{product.name}</h1>
+            <h1 className="text-2xl md:text-3xl font-bold text-gray-900">
+              {product.name}
+            </h1>
 
-            {/* RATING */}
-            <StarRating rating={rating} reviewCount={reviewCount} />
+            {/* LIVE RATING */}
+            <StarRating
+              rating={displayRating}
+              reviewCount={displayReviewCount}
+            />
 
             {/* PRICE */}
             <div className="flex items-baseline gap-3 mt-4">
               <p className="text-green-600 text-2xl font-bold">
                 ₹{product.price}
                 {product.unit && (
-                  <span className="text-base font-normal text-gray-500"> / {product.unit}</span>
+                  <span className="text-base font-normal text-gray-500">
+                    {" "}
+                    / {product.unit}
+                  </span>
                 )}
               </p>
               {product.originalPrice && product.originalPrice > product.price && (
                 <>
-                  <span className="text-gray-400 line-through text-base">₹{product.originalPrice}</span>
+                  <span className="text-gray-400 line-through text-base">
+                    ₹{product.originalPrice}
+                  </span>
                   <span className="text-xs font-bold bg-green-100 text-green-700 px-2 py-0.5 rounded-full">
-                    {Math.round(((product.originalPrice - product.price) / product.originalPrice) * 100)}% OFF
+                    {Math.round(
+                      ((product.originalPrice - product.price) /
+                        product.originalPrice) *
+                        100
+                    )}
+                    % OFF
                   </span>
                 </>
               )}
@@ -515,12 +1138,14 @@ function ProductDetailsContent({ id }: { id: string }) {
                   <Tag size={13} /> {product.category}
                 </span>
               )}
-              {product.stock !== undefined && product.stock !== null && product.stock > 0 && (
-                <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium border bg-blue-50 text-blue-700 border-blue-200">
-                  <Layers size={13} />
-                  {product.stock} in stock
-                </span>
-              )}
+              {product.stock !== undefined &&
+                product.stock !== null &&
+                product.stock > 0 && (
+                  <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium border bg-blue-50 text-blue-700 border-blue-200">
+                    <Layers size={13} />
+                    {product.stock} in stock
+                  </span>
+                )}
             </div>
 
             <p className="mt-4 text-gray-600 text-sm leading-relaxed">
@@ -538,7 +1163,14 @@ function ProductDetailsContent({ id }: { id: string }) {
               </button>
               <span className="w-8 text-center font-semibold">{qty}</span>
               <button
-                onClick={() => setQty(Math.min(product.stock > 0 ? product.stock : 99, qty + 1))}
+                onClick={() =>
+                  setQty(
+                    Math.min(
+                      product.stock > 0 ? product.stock : 99,
+                      qty + 1
+                    )
+                  )
+                }
                 className="w-9 h-9 rounded-xl bg-gray-100 hover:bg-gray-200 flex items-center justify-center font-bold transition"
               >
                 +
@@ -555,7 +1187,9 @@ function ProductDetailsContent({ id }: { id: string }) {
               </button>
               <button
                 onClick={handleWishlist}
-                aria-label={wishlisted ? "Remove from wishlist" : "Add to wishlist"}
+                aria-label={
+                  wishlisted ? "Remove from wishlist" : "Add to wishlist"
+                }
                 className={`p-3 rounded-xl border-2 transition ${
                   wishlisted
                     ? "border-red-500 bg-red-50 text-red-500"
@@ -597,6 +1231,11 @@ function ProductDetailsContent({ id }: { id: string }) {
             </div>
           </div>
         </motion.div>
+
+        {/* ── REVIEWS SECTION (new) ─────────────────────────────────────── */}
+        <div className="bg-white rounded-2xl shadow p-5 md:p-8 mt-6">
+          <ReviewsSection productId={id} user={user} />
+        </div>
 
         {/* CUSTOMERS ALSO BOUGHT */}
         <CustomersAlsoBought

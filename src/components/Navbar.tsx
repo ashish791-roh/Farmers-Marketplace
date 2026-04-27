@@ -380,7 +380,7 @@ export default function Navbar() {
               className="hidden md:flex items-center gap-1 shrink-0 text-[11px] text-green-200 cursor-pointer hover:text-white transition"
             >
               <MapPin size={11} />
-              <span>Deliver to: <span className="font-semibold text-white">{location.pincode || location.city}</span></span>
+              <span>Deliver to: <span className="font-semibold text-white">{location.city}{location.pincode ? ` · ${location.pincode}` : ""}</span></span>
               <ChevronDown size={11} />
             </button>
           </div>

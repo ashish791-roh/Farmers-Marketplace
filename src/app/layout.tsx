@@ -6,6 +6,7 @@ import { WishlistProvider } from "@/context/WishlistContext";
 import { Toaster } from "react-hot-toast";
 import Script from "next/script";
 import BottomNav from "@/components/BottomNav";
+import AiFarmAssistant from "@/components/AiFarmAssistant";
 
 export const viewport: Viewport = {
   width: "device-width",
@@ -64,6 +65,8 @@ export default function RootLayout({
                 {children}
               </div>
               <BottomNav />
+              {/* AI Farm Assistant — floating chatbot powered by Claude */}
+              <AiFarmAssistant />
               <Toaster
                 position="top-center"
                 toastOptions={{
