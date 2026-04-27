@@ -193,9 +193,6 @@ export default function Home() {
 
   return (
     <>
-      {/* ── Offer strip ──────────────────────────────────────────────────── */}
-      <OfferStrip />
-
       <Navbar />
 
       <main className="max-w-7xl mx-auto px-3 md:px-6 pb-6 space-y-7">

@@ -1,10 +1,18 @@
 import "./globals.css";
+import type { Viewport } from "next";
 import { AuthProvider } from "@/context/AuthContext";
 import { CartProvider } from "@/context/CartContext";
 import { WishlistProvider } from "@/context/WishlistContext";
 import { Toaster } from "react-hot-toast";
 import Script from "next/script";
 import BottomNav from "@/components/BottomNav";
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
+};
 
 export const metadata = {
   title: {
@@ -44,25 +52,18 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body className="bg-gray-50 text-gray-900 antialiased">
-        {/* Razorpay SDK */}
+      <body className="bg-gray-50 text-gray-900 antialiased overflow-x-hidden">
         <Script
           src="https://checkout.razorpay.com/v1/checkout.js"
           strategy="lazyOnload"
         />
-
         <AuthProvider>
           <CartProvider>
             <WishlistProvider>
-              {/* Main scrollable content */}
-              <div className="min-h-screen">
+              <div className="min-h-screen w-full overflow-x-hidden">
                 {children}
               </div>
-
-              {/* Fixed bottom navigation (mobile only) */}
               <BottomNav />
-
-              {/* Toast notifications */}
               <Toaster
                 position="top-center"
                 toastOptions={{
@@ -74,17 +75,11 @@ export default function RootLayout({
                     boxShadow: "0 4px 20px rgba(0,0,0,0.12)",
                   },
                   success: {
-                    style: {
-                      background: "#16a34a",
-                      color: "white",
-                    },
+                    style: { background: "#16a34a", color: "white" },
                     iconTheme: { primary: "white", secondary: "#16a34a" },
                   },
                   error: {
-                    style: {
-                      background: "#dc2626",
-                      color: "white",
-                    },
+                    style: { background: "#dc2626", color: "white" },
                     iconTheme: { primary: "white", secondary: "#dc2626" },
                   },
                 }}

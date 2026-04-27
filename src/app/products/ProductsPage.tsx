@@ -123,7 +123,7 @@ function ProductCard({
   };
 
   return (
-    <Link href={`/products/${product.id}`} className="block group">
+    <Link href={`/product/${product.id}`} className="block group">
       <div className="relative bg-white rounded-2xl border border-gray-100 overflow-hidden hover:shadow-lg hover:-translate-y-0.5 transition-all duration-200 active:scale-[0.98] flex flex-col">
         {/* Wishlist */}
         <button
@@ -354,7 +354,8 @@ const PAGE_SIZE = 12; // products per page
 // ─── Inner Page (uses useSearchParams) ────────────────────────────────────────
 function ProductsInner() {
   const searchParams = useSearchParams();
-  const { addToCart } = useCart();
+  const { addToCart, cart } = useCart();
+  const cartCount = cart?.reduce((sum, item) => sum + item.quantity, 0) || 0;
   const { wishlist, addToWishlist, removeFromWishlist } = useWishlist();
 
   const [products, setProducts] = useState<Product[]>([]);
@@ -484,6 +485,11 @@ function ProductsInner() {
     .sort((a, b) => {
       if (sortBy === "price_asc") return a.price - b.price;
       if (sortBy === "price_desc") return b.price - a.price;
+      if (sortBy === "newest") {
+        const ta = a.createdAt?.toMillis?.() ?? (a.createdAt?.seconds != null ? a.createdAt.seconds * 1000 : 0);
+        const tb = b.createdAt?.toMillis?.() ?? (b.createdAt?.seconds != null ? b.createdAt.seconds * 1000 : 0);
+        return tb - ta;
+      }
       if (sortBy === "discount") {
         const da = a.originalPrice ? a.originalPrice - a.price : 0;
         const db_ = b.originalPrice ? b.originalPrice - b.price : 0;
@@ -526,6 +532,15 @@ function ProductsInner() {
               </button>
             )}
           </div>
+          {/* ── Cart Icon ── */}
+          <Link href="/cart" className="relative flex-shrink-0 text-white">
+            <ShoppingCart size={22} />
+            {cartCount > 0 && (
+              <span className="absolute -top-1.5 -right-1.5 min-w-[16px] h-4 bg-orange-400 text-white text-[9px] font-extrabold rounded-full flex items-center justify-center px-0.5">
+                {cartCount > 9 ? "9+" : cartCount}
+              </span>
+            )}
+          </Link>
         </div>
 
         {/* Filter / Sort bar */}
@@ -551,18 +566,33 @@ function ProductsInner() {
           {/* Sort dropdown */}
           <div className="relative flex-shrink-0">
             <button
+              id="sort-btn"
               onClick={() => setShowSortDropdown(!showSortDropdown)}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-gray-200 bg-white text-gray-600 text-xs font-semibold"
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-semibold transition-all ${
+                sortBy !== "relevance"
+                  ? "bg-green-600 text-white border-green-600"
+                  : "border-gray-200 bg-white text-gray-600"
+              }`}
             >
-              Sort <ChevronDown size={12} />
+              {SORT_OPTIONS.find((o) => o.value === sortBy)?.label ?? "Sort"}
+              <ChevronDown size={12} />
             </button>
             {showSortDropdown && (
               <>
                 <div
-                  className="fixed inset-0 z-10"
+                  className="fixed inset-0 z-40"
                   onClick={() => setShowSortDropdown(false)}
                 />
-                <div className="absolute left-0 top-8 z-20 bg-white rounded-xl shadow-xl border border-gray-100 min-w-[160px] overflow-hidden">
+                <div className="fixed left-3 z-50 bg-white rounded-xl shadow-2xl border border-gray-100 min-w-[180px] overflow-hidden"
+                  style={{
+                    top: (() => {
+                      if (typeof window === "undefined") return 100;
+                      const btn = document.getElementById("sort-btn");
+                      if (!btn) return 100;
+                      return btn.getBoundingClientRect().bottom + 6;
+                    })(),
+                  }}
+                >
                   {SORT_OPTIONS.map((opt) => (
                     <button
                       key={opt.value}
@@ -570,13 +600,16 @@ function ProductsInner() {
                         setSortBy(opt.value);
                         setShowSortDropdown(false);
                       }}
-                      className={`w-full text-left px-4 py-2.5 text-xs font-medium transition-colors ${
+                      className={`w-full text-left px-4 py-3 text-xs font-medium transition-colors flex items-center justify-between ${
                         sortBy === opt.value
                           ? "bg-green-50 text-green-700 font-bold"
                           : "text-gray-700 hover:bg-gray-50"
                       }`}
                     >
                       {opt.label}
+                      {sortBy === opt.value && (
+                        <span className="w-1.5 h-1.5 rounded-full bg-green-600 inline-block" />
+                      )}
                     </button>
                   ))}
                 </div>

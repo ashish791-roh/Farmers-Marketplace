@@ -397,9 +397,9 @@ export default function Navbar() {
                 <div className="w-8 h-8 md:w-9 md:h-9 rounded-xl bg-gradient-to-br from-green-500 to-emerald-600 flex items-center justify-center shadow-sm group-hover:shadow-md transition-shadow">
                   <span className="text-white text-sm md:text-base font-bold leading-none">F</span>
                 </div>
-                <div className="hidden sm:flex flex-col leading-none">
-                  <span className="text-green-700 font-extrabold text-lg tracking-tight">FarmX</span>
-                  <span className="text-[9px] text-green-500 font-medium tracking-widest uppercase -mt-0.5">Fresh · Direct</span>
+                <div className="flex flex-col leading-none">
+                  <span className="text-green-700 font-extrabold text-base md:text-lg tracking-tight">FarmX</span>
+                  <span className="hidden sm:block text-[9px] text-green-500 font-medium tracking-widest uppercase -mt-0.5">Fresh · Direct</span>
                 </div>
               </Link>
 
@@ -487,19 +487,11 @@ export default function Navbar() {
                 </button>
               </div>
 
-              {/* ── MOBILE LOCATION BUTTON ── */}
-              <button
-                onClick={() => setLocationOpen(true)}
-                className="lg:hidden flex items-center gap-1 px-2 py-1.5 rounded-lg hover:bg-gray-50 transition shrink-0 border border-gray-100"
-              >
-                <MapPin size={13} className="text-green-600 shrink-0" />
-                <span className="text-[11px] font-semibold text-gray-700 max-w-[60px] truncate">{location.city}</span>
-                <ChevronDown size={11} className="text-gray-400" />
-              </button>
+
 
               {/* ── RIGHT ICONS ── */}
               <div className="flex items-center gap-0.5 shrink-0">
-                <Link href="/wishlist" className="relative p-2 rounded-xl hover:bg-gray-50 transition group" aria-label="Wishlist">
+                <Link href="/wishlist" className="hidden md:flex relative p-2 rounded-xl hover:bg-gray-50 transition group" aria-label="Wishlist">
                   <Heart size={21} className={`transition ${wishlist.length > 0 ? "fill-red-500 text-red-500" : "text-gray-500 group-hover:text-red-400"}`} />
                   <AnimatePresence>
                     {wishlist.length > 0 && (
