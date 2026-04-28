@@ -49,7 +49,6 @@ import LoginModal from "@/components/LoginModal";
 import { useAuth } from "@/context/AuthContext";
 import ProductCard from "@/components/ProductCard";
 import type { Product } from "@/types";
-import type { User } from "firebase/auth";
 
 type Props = {
   params: Promise<{ id: string }>;
@@ -62,7 +61,7 @@ type Review = {
   userName: string;
   rating: number;
   comment: string;
-  createdAt: { seconds: number; nanoseconds: number; toDate?: () => Date } | null;
+  createdAt: any;
   helpful: number;
   helpfulBy?: string[];
   verifiedPurchase?: boolean;
@@ -214,7 +213,7 @@ function WriteReviewForm({
   onSuccess,
 }: {
   productId: string;
-  user: User;
+  user: any;
   existingReview: Review | null;
   onSuccess: () => void;
 }) {
@@ -242,7 +241,7 @@ function WriteReviewForm({
         )
       );
       const isVerified = ordersSnap.docs.some((d) =>
-        (d.data().items || []).some((item: { id: string }) => item.id === productId)
+        (d.data().items || []).some((item: any) => item.id === productId)
       );
 
       const reviewData = {
@@ -450,7 +449,7 @@ function ReviewsSection({
   user,
 }: {
   productId: string;
-  user: User | null;
+  user: any;
 }) {
   const [reviews, setReviews] = useState<Review[]>([]);
   const [loading, setLoading] = useState(true);
@@ -804,7 +803,7 @@ function CustomersAlsoBought({
                 className="bg-gray-100 rounded-2xl h-52 animate-pulse"
               />
             ))
-          : products.map((p) => (
+          : products.map((p: any) => (
               <ProductCard
                 key={p.id}
                 id={p.id}
@@ -816,7 +815,7 @@ function CustomersAlsoBought({
                 rating={p.rating}
                 reviewCount={p.reviewCount}
                 originalPrice={p.originalPrice}
-                isFeatured={(p as Product & { isFeatured?: boolean }).isFeatured}
+                isFeatured={p.isFeatured}
                 stock={p.stock}
               />
             ))}
@@ -833,7 +832,7 @@ function StickyBuyBar({
   wishlisted,
   sentinelRef,
 }: {
-  product: Product;
+  product: any;
   onAddToCart: () => void;
   onWishlist: () => void;
   wishlisted: boolean;

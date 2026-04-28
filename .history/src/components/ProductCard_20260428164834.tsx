@@ -247,7 +247,7 @@ const ProductCard = ({
               "absolute top-2 right-2 z-10 w-8 h-8 rounded-full",
               "flex items-center justify-center",
               "shadow-md backdrop-blur-sm",
-              "cursor-pointer",
+              "cursor "
               "transition-all duration-200",
               wishlisted
                 ? "bg-red-500 text-white"

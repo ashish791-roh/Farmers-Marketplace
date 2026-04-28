@@ -392,16 +392,11 @@ function PriceBreakdown({ cart, couponDiscount = 0 }: { cart: CartItem[]; coupon
             value: `₹${subtotal}`,
             valueClass: "text-gray-700",
           },
-          ...(itemDiscount > 0
-            ? [
-                {
-                  label: "Discount",
-                  value: `−₹${Math.round(itemDiscount)}`,
-                  valueClass: "text-green-600 font-semibold",
-                  sub: undefined,
-                },
-              ]
-            : []),
+          {
+            label: "Discount",
+            value: `−₹${Math.round(itemDiscount)}`,
+            valueClass: "text-green-600 font-semibold",
+          },
           ...(couponDiscount > 0
             ? [
                 {

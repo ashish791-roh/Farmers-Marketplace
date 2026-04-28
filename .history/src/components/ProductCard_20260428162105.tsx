@@ -26,8 +26,6 @@ type Props = {
   stock?: number;
   farmerVerified?: boolean;
   farmerName?: string;
-  /** Pass true for the first above-the-fold card to boost LCP */
-  priority?: boolean;
 };
 
 // ── Skeleton loader ────────────────────────────────────────────────────────────
@@ -100,7 +98,6 @@ const ProductCard = ({
   stock,
   farmerVerified,
   farmerName,
-  priority = false,
 }: Props) => {
   const { addToCart } = useCart();
   const { addToWishlist, removeFromWishlist, isWishlisted } = useWishlist();
@@ -206,8 +203,6 @@ const ProductCard = ({
                 fill
                 sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
                 className="object-cover transition-transform duration-500 ease-out group-hover:scale-[1.08]"
-                priority={priority}
-                loading={priority ? "eager" : "lazy"}
                 onError={() => setImgError(true)}
               />
             </div>
@@ -247,11 +242,10 @@ const ProductCard = ({
               "absolute top-2 right-2 z-10 w-8 h-8 rounded-full",
               "flex items-center justify-center",
               "shadow-md backdrop-blur-sm",
-              "cursor-pointer",
               "transition-all duration-200",
               wishlisted
                 ? "bg-red-500 text-white"
-                : "bg-white/90 text-gray-400 cursor-pointer hover:text-red-500 hover:bg-white hover:scale-110",
+                : "bg-white/90 text-gray-400 hover:text-red-500 hover:bg-white hover:scale-110",
             ].join(" ")}
           >
             <Heart
@@ -339,22 +333,14 @@ const ProductCard = ({
             </h3>
           </Link>
 
-          {/* Farmer row — always one fixed line; shows verified badge + name when available,
-               falls back to category tag, or a neutral "Farm Fresh" label so the slot
-               is never empty and cards stay exactly the same height. */}
-          <div className="flex items-center gap-1 mb-1.5 h-[18px] overflow-hidden">
-            {farmerVerified ? (
-              <span className="inline-flex items-center gap-1 bg-green-50 border border-green-200 text-green-700 text-[10px] font-semibold px-1.5 py-0.5 rounded-full min-w-0">
-                <svg className="w-2.5 h-2.5 text-green-600 shrink-0" viewBox="0 0 20 20" fill="currentColor">
-                  <path fillRule="evenodd" d="M6.267 3.455a3.066 3.066 0 001.745-.723 3.066 3.066 0 013.976 0 3.066 3.066 0 001.745.723 3.066 3.066 0 012.812 2.812c.051.643.304 1.254.723 1.745a3.066 3.066 0 010 3.976 3.066 3.066 0 00-.723 1.745 3.066 3.066 0 01-2.812 2.812 3.066 3.066 0 00-1.745.723 3.066 3.066 0 01-3.976 0 3.066 3.066 0 00-1.745-.723 3.066 3.066 0 01-2.812-2.812 3.066 3.066 0 00-.723-1.745 3.066 3.066 0 010-3.976 3.066 3.066 0 00.723-1.745 3.066 3.066 0 012.812-2.812zm7.44 5.252a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                </svg>
-                <span className="truncate">{farmerName ? `${farmerName}` : "Verified Farmer"}</span>
-              </span>
-            ) : farmerName ? (
-              <span className="text-[10px] text-gray-400 truncate">🧑‍🌾 {farmerName}</span>
-            ) : (
-              <span className="text-[10px] text-gray-400">🌿 Farm Fresh</span>
-            )}
+          {/* Farmer verified badge — always reserve height so all cards stay the same size */}
+          <div className={"flex items-center gap-1 mb-1.5 " + (farmerVerified ? "visible" : "invisible")}>
+            <span className="inline-flex items-center gap-1 bg-green-50 border border-green-200 text-green-700 text-[10px] font-semibold px-1.5 py-0.5 rounded-full">
+              <svg className="w-2.5 h-2.5 text-green-600 shrink-0" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M6.267 3.455a3.066 3.066 0 001.745-.723 3.066 3.066 0 013.976 0 3.066 3.066 0 001.745.723 3.066 3.066 0 012.812 2.812c.051.643.304 1.254.723 1.745a3.066 3.066 0 010 3.976 3.066 3.066 0 00-.723 1.745 3.066 3.066 0 01-2.812 2.812 3.066 3.066 0 00-1.745.723 3.066 3.066 0 01-3.976 0 3.066 3.066 0 00-1.745-.723 3.066 3.066 0 01-2.812-2.812 3.066 3.066 0 00-.723-1.745 3.066 3.066 0 010-3.976 3.066 3.066 0 00.723-1.745 3.066 3.066 0 012.812-2.812zm7.44 5.252a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+              </svg>
+              Verified Farmer{farmerName ? ` · ${farmerName}` : ""}
+            </span>
           </div>
           <div className="flex items-center gap-1.5 mb-2">
             <div className="flex items-center gap-0.5 bg-green-600 text-white text-[10px] font-bold px-1.5 py-[2px] rounded">

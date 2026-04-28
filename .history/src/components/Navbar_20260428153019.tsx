@@ -417,7 +417,7 @@ export default function Navbar() {
               {/* ── LOCATION (desktop) ── */}
               <button
                 onClick={() => setLocationOpen(true)}
-                className="hidden lg:flex items-center gap-1.5 px-3 py-2 rounded-xl cursor-pointer hover:bg-gray-50 transition group shrink-0 border border-transparent hover:border-gray-200"
+                className="hidden lg:flex items-center gap-1.5 px-3 py-2 rounded-xl hover:bg-gray-50 transition group shrink-0 border border-transparent hover:border-gray-200"
               >
                 <MapPin size={15} className="text-green-600 shrink-0" />
                 <div className="text-left leading-none">

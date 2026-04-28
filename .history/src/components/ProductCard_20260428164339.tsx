@@ -247,11 +247,10 @@ const ProductCard = ({
               "absolute top-2 right-2 z-10 w-8 h-8 rounded-full",
               "flex items-center justify-center",
               "shadow-md backdrop-blur-sm",
-              "cursor-pointer",
               "transition-all duration-200",
               wishlisted
                 ? "bg-red-500 text-white"
-                : "bg-white/90 text-gray-400 cursor-pointer hover:text-red-500 hover:bg-white hover:scale-110",
+                : "bg-white/90 text-gray-400 hover:text-red-500 cursor-pointerhover:bg-white hover:scale-110",
             ].join(" ")}
           >
             <Heart

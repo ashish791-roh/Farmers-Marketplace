@@ -417,14 +417,14 @@ export default function Navbar() {
               {/* ── LOCATION (desktop) ── */}
               <button
                 onClick={() => setLocationOpen(true)}
-                className="hidden lg:flex items-center gap-1.5 px-3 py-2 rounded-xl cursor-pointer hover:bg-gray-50 transition group shrink-0 border border-transparent hover:border-gray-200"
+                className="hidden lg:flex items-center gap-1.5 px-3 py-2 rounded-xl cursor-pohover:bg-gray-50 transition group shrink-0 border border-transparent hover:border-gray-200"
               >
                 <MapPin size={15} className="text-green-600 shrink-0" />
                 <div className="text-left leading-none">
                   <p className="text-[9px] text-gray-400 uppercase tracking-wider font-medium">Deliver to</p>
                   <p className="text-xs font-bold text-gray-800 flex items-center gap-0.5">
                     {location.city}
-                    <ChevronDown size={11} className="text-gray-400 group-hover:text-green-600 transition" />
+                    <ChevronDown size={11} className="text-gray-400 cursor-pointer hover:text-green-600 transition" />
                   </p>
                 </div>
               </button>

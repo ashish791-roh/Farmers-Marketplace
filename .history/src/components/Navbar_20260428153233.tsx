@@ -424,7 +424,7 @@ export default function Navbar() {
                   <p className="text-[9px] text-gray-400 uppercase tracking-wider font-medium">Deliver to</p>
                   <p className="text-xs font-bold text-gray-800 flex items-center gap-0.5">
                     {location.city}
-                    <ChevronDown size={11} className="text-gray-400 group-hover:text-green-600 transition" />
+                    <ChevronDown size={11} className="text-gray-400 g hover:text-green-600 transition" />
                   </p>
                 </div>
               </button>

@@ -424,7 +424,7 @@ export default function SmartRecommendations({ allProducts, loading }: Props) {
               // Dispatch a custom event to open the location modal in Navbar
               window.dispatchEvent(new CustomEvent("farmx:openLocation"));
             }}
-            className={`font-semibold ${profile.accentText} cursor-pointer hover:underline`}
+            className={`font-semibold ${profile.accentText} cursor-hover:underline`}
           >
             Change location
           </button>

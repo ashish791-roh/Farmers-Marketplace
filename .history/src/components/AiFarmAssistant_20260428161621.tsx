@@ -66,7 +66,6 @@ export default function AiFarmAssistant() {
   const [open, setOpen] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
-  const [mounted, setMounted] = useState(false);
   const [messages, setMessages] = useState<Message[]>([{
     id: "welcome", role: "assistant",
     content: "Namaste! 🌿 I'm **FarmBot**, your AI farming assistant.\n\nAsk me anything about crops, soil, pest control, or how to get the best from FarmX!\n\nWhat can I help you grow today?",
@@ -85,7 +84,6 @@ export default function AiFarmAssistant() {
   useEffect(() => {
     const check = () => setIsMobile(window.innerWidth < 768);
     check();
-    setMounted(true);
     window.addEventListener("resize", check);
     return () => window.removeEventListener("resize", check);
   }, []);
@@ -189,10 +187,6 @@ export default function AiFarmAssistant() {
   // dvh = dynamic viewport height (shrinks when keyboard appears on iOS/Android)
   const MOBILE_CHAT_HEIGHT = `calc(100dvh - ${BOTTOM_NAV_H}px - env(safe-area-inset-bottom, 0px) - 60px)`;
 
-  // Don't render isMobile-dependent UI until client has mounted —
-  // prevents SSR/client className mismatch (React hydration error).
-  if (!mounted) return null;
-
   return (
     <>
       {/* ── FAB ─────────────────────────────────────────────────────────── */}
@@ -200,7 +194,7 @@ export default function AiFarmAssistant() {
         {!open && (
           <motion.button
             onClick={() => setOpen(true)}
-            className="fixed z-40 flex items-center gap-2 rounded-2xl px-4 py-3 font-semibold text-sm text-white fab-btn"
+            className="fixed z-40 flex items-center gap-2 rounded-2xl px-4 py-3 font-semibold text-sm text-white fab-btn cursor-pointer"
             style={{ bottom: FAB_BOTTOM, right: "16px" }}
             initial={{ opacity: 0, scale: 0.7, y: 16 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}

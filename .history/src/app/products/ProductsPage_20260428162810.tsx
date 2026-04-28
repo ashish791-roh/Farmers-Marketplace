@@ -210,21 +210,26 @@ function ProductCard({
               </span>
             </div>
 
-            {/* Farmer row — single fixed-height line, never empty, never wraps */}
-            <div className="h-[18px] flex items-center mt-0.5 overflow-hidden">
-              {product.farmerVerified ? (
-                <span className="inline-flex items-center gap-1 bg-green-50 border border-green-200 text-green-700 text-[9px] font-semibold px-1.5 py-0.5 rounded-full min-w-0">
-                  <svg className="w-2 h-2 text-green-600 shrink-0" viewBox="0 0 20 20" fill="currentColor">
-                    <path fillRule="evenodd" d="M6.267 3.455a3.066 3.066 0 001.745-.723 3.066 3.066 0 013.976 0 3.066 3.066 0 001.745.723 3.066 3.066 0 012.812 2.812c.051.643.304 1.254.723 1.745a3.066 3.066 0 010 3.976 3.066 3.066 0 00-.723 1.745 3.066 3.066 0 01-2.812 2.812 3.066 3.066 0 00-1.745.723 3.066 3.066 0 01-3.976 0 3.066 3.066 0 00-1.745-.723 3.066 3.066 0 01-2.812-2.812 3.066 3.066 0 00-.723-1.745 3.066 3.066 0 010-3.976 3.066 3.066 0 00.723-1.745 3.066 3.066 0 012.812-2.812zm7.44 5.252a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                  </svg>
-                  <span className="truncate">{product.farmerName ?? "Verified Farmer"}</span>
-                </span>
-              ) : product.farmerName ? (
-                <p className="text-gray-400 text-[9px] truncate">🧑‍🌾 {product.farmerName}</p>
-              ) : (
-                <p className="text-gray-400 text-[9px]">🌿 Farm Fresh</p>
-              )}
-            </div>
+            {product.farmerName && (
+              <p className="text-gray-400 text-[10px] mt-0.5 truncate">
+                by {product.farmerName}
+              </p>
+            )}
+
+            <span className={"inline-flex items-center gap-1 bg-green-50 border border-green-200 text-green-700 text-[9px] font-semibold px-1.5 py-0.5 rounded-full w-fit mt-0.5 " + (product.farmerVerified ? "visible" : "invisible")}>
+                <svg
+                  className="w-2 h-2 text-green-600 shrink-0"
+                  viewBox="0 0 20 20"
+                  fill="currentColor"
+                >
+                  <path
+                    fillRule="evenodd"
+                    d="M6.267 3.455a3.066 3.066 0 001.745-.723 3.066 3.066 0 013.976 0 3.066 3.066 0 001.745.723 3.066 3.066 0 012.812 2.812c.051.643.304 1.254.723 1.745a3.066 3.066 0 010 3.976 3.066 3.066 0 00-.723 1.745 3.066 3.066 0 01-2.812 2.812 3.066 3.066 0 00-1.745.723 3.066 3.066 0 01-3.976 0 3.066 3.066 0 00-1.745-.723 3.066 3.066 0 01-2.812-2.812 3.066 3.066 0 00-.723-1.745 3.066 3.066 0 010-3.976 3.066 3.066 0 00.723-1.745 3.066 3.066 0 012.812-2.812zm7.44 5.252a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
+                    clipRule="evenodd"
+                  />
+                </svg>
+                Verified Farmer
+              </span>
 
             {/* Add to Cart */}
             <button

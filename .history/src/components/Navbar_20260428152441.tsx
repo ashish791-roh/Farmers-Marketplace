@@ -417,7 +417,7 @@ export default function Navbar() {
               {/* ── LOCATION (desktop) ── */}
               <button
                 onClick={() => setLocationOpen(true)}
-                className="hidden lg:flex items-center gap-1.5 px-3 py-2 rounded-xl cursor-pointer hover:bg-gray-50 transition group shrink-0 border border-transparent hover:border-gray-200"
+                className="hidden lg:flex items-center gap-1.5 px-3 py-2 rounded-xl hover:bg-gray-50 transition group shrink-0 border border-transparent hover:border-gray-200"
               >
                 <MapPin size={15} className="text-green-600 shrink-0" />
                 <div className="text-left leading-none">
@@ -518,7 +518,7 @@ export default function Navbar() {
 
                 <Link href="/cart" className="relative p-2 rounded-xl cursor-pointer hover:bg-gray-50 transition group" aria-label="Cart">
                   <motion.div animate={cartBounce ? { scale: [1, 1.35, 0.9, 1.1, 1] } : {}} transition={{ duration: 0.5, ease: "easeInOut" }}>
-                    <ShoppingCart size={21} className="text-gray-500 group-hover:text-green-600 transition" />
+                    <ShoppingCart size={21} className="text-gray-500 cursor-pointer hover:text-green-600 transition" />
                   </motion.div>
                   <AnimatePresence>
                     {cartCount > 0 && (
@@ -531,7 +531,7 @@ export default function Navbar() {
 
                 {!loading && (
                   <div ref={profileRef} className="relative">
-                    <button onClick={() => setProfileOpen((p) => !p)} className="flex items-center gap-1 p-1.5 rounded-xl hover:bg-gray-50 cursor-pointer transition" aria-label="Profile">
+                    <button onClick={() => setProfileOpen((p) => !p)} className="flex items-center gap-1 p-1.5 rounded-xl hover:bg-gray-50 transition" aria-label="Profile">
                       {user ? (
                         <div className="w-8 h-8 rounded-full bg-gradient-to-br from-green-400 to-emerald-600 flex items-center justify-center text-white text-sm font-bold shadow-sm">
                           {initials}
