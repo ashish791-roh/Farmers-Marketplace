@@ -1,0 +1,7 @@
+<svg width="120" height="120" viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Product placeholder">
+  <rect width="120" height="120" rx="20" fill="#edf2f7" />
+  <path d="M33 42h54v12H33zM33 66h54v12H33z" fill="#cbd5e1" />
+  <rect x="28" y="30" width="64" height="64" rx="14" fill="#fff" stroke="#e2e8f0" stroke-width="2" />
+  <path d="M42 48h36v24H42z" fill="#e2e8f0" />
+  <circle cx="60" cy="72" r="6" fill="#cbd5e1" />
+</svg>
